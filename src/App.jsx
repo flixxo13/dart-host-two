@@ -278,3 +278,4 @@ const styles = {
   progressFill: { height: '100%', backgroundColor: COLORS.primary, transition: 'width 0.4s ease' },
   errorText: { color: COLORS.danger, fontSize: 12, marginTop: 20, maxWidth: '280px' }
 };
+ 
