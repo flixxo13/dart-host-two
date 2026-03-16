@@ -1,78 +1,55 @@
 import React, { useState, useEffect, useRef } from "react";
 import * as webllm from "@mlc-ai/web-llm";
 
-/* ─────────────── THEME & KONFIGURATION ─────────────── */
+/* ─────────────── DESIGN SYSTEM ─────────────── */
 const COLORS = {
   bg: "#0F172A",
   card: "#1E293B",
-  primary: "#30D158", 
+  primary: "#30D158", // Neon Green
   text: "#FFFFFF",
   textMuted: "#94A3B8",
-  danger: "#EF4444"
+  danger: "#EF4444",
+  accent: "#3B82F6"
 };
 
 const SELECTED_MODEL = "Gemma-2b-it-q4f16_1-MLC";
 
 export default function App() {
+  // KI-System
   const [engine, setEngine] = useState(null);
   const [loadingAI, setLoadingAI] = useState(true);
   const [loadProgress, setLoadProgress] = useState("System-Check...");
-  const [errorDetail, setErrorDetail] = useState("");
-  const [isIsolated, setIsIsolated] = useState(false);
-
+  
+  // Game Logic
   const [phase, setPhase] = useState("setup"); 
   const [players, setPlayers] = useState([]);
   const [currentPlayerIdx, setCurrentPlayerIdx] = useState(0);
   const [gameMode, setGameMode] = useState(501);
   const [currentRound, setCurrentRound] = useState([]);
   const [multiplier, setMultiplier] = useState(1);
-  const [comment, setComment] = useState("Bereit?");
+  const [comment, setComment] = useState("Willkommen beim Match!");
   const [showTV, setShowTV] = useState(false);
   const [lastStats, setLastStats] = useState({ total: 0, rest: 0, name: "" });
+  const [inputMode, setInputMode] = useState("keypad");
 
-  /* 1. INITIALISIERUNG */
+  /* ─────────────── KI INITIALISIERUNG ─────────────── */
   useEffect(() => {
-    async function init() {
-      const isolated = window.crossOriginIsolated;
-      setIsIsolated(isolated);
-
-      if (!navigator.gpu) {
-        setLoadProgress("WebGPU nicht unterstützt.");
-        setTimeout(() => setLoadingAI(false), 4000);
-        return;
-      }
-
+    async function initAI() {
       try {
-        setLoadProgress("GPU erkannt. Lade KI...");
-        
-        // Nutzt den Worker aus dem src-Verzeichnis (Vite bündelt dies)
-        const worker = new Worker(new URL("./ai-worker.js", import.meta.url), {
-          type: "module",
+        if (!navigator.gpu) throw new Error("WebGPU fehlt");
+        const worker = new Worker(new URL("./ai-worker.js", import.meta.url), { type: "module" });
+        const engineInstance = await webllm.CreateWebWorkerMLCEngine(worker, SELECTED_MODEL, { 
+          initProgressCallback: (p) => setLoadProgress(`Gehirn wird geladen: ${Math.round(p.progress * 100)}%`)
         });
-
-        const engineInstance = await webllm.CreateWebWorkerMLCEngine(
-          worker,
-          SELECTED_MODEL,
-          { 
-            initProgressCallback: (p) => {
-              const perc = Math.round(p.progress * 100);
-              setLoadProgress(`Lade Modell: ${perc}%`);
-            } 
-          }
-        );
-        
         setEngine(engineInstance);
         setLoadingAI(false);
       } catch (e) {
-        console.error(e);
-        setErrorDetail(e.message);
-        setTimeout(() => setLoadingAI(false), 5000);
+        setLoadingAI(false);
       }
     }
-    init();
+    initAI();
   }, []);
 
-  /* 2. AUDIO & KI LOGIK */
   const speak = (text) => {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
@@ -84,22 +61,20 @@ export default function App() {
   const fetchAIComment = async (total, rest, name, bust) => {
     if (!engine) return `${name} wirft ${total}. Rest ${rest}.`;
     try {
-      const prompt = `Du bist ein frecher Dart-Moderator. Spieler: ${name}, Wurf: ${total}, Rest: ${rest}. ${bust ? 'Bust!' : ''} Antworte kurz, humorvoll, Deutsch. Max 12 Wörter.`;
+      const prompt = `Du bist ein frecher Dart-Moderator. Spieler: ${name}, Wurf: ${total}, Rest: ${rest}. ${bust ? 'Bust!' : ''} Antworte kurz, witzig, auf Deutsch. Max 12 Wörter.`;
       const reply = await engine.chat.completions.create({ messages: [{ role: "user", content: prompt }] });
       return reply.choices[0].message.content;
-    } catch (e) {
-      return `${name} wirft ${total}.`;
-    }
+    } catch (e) { return `${name} wirft ${total}.`; }
   };
 
-  /* 3. GAMEPLAY FUNCTIONS */
+  /* ─────────────── SPIEL-AKTIONEN ─────────────── */
   const addDart = (val) => {
     if (currentRound.length >= 3) return;
     const score = val * multiplier;
-    const label = multiplier === 3 ? `T${val}` : multiplier === 2 ? `D${val}` : `${val}`;
-    setCurrentRound([...currentRound, { val: score, label: val === 0 ? "Miss" : label }]);
+    const label = val === 0 ? "Miss" : (multiplier === 3 ? `T${val}` : multiplier === 2 ? `D${val}` : `${val}`);
+    setCurrentRound([...currentRound, { val: score, label }]);
     setMultiplier(1);
-    if (navigator.vibrate) navigator.vibrate(15);
+    if (navigator.vibrate) navigator.vibrate(20);
   };
 
   const finishRound = async () => {
@@ -109,6 +84,10 @@ export default function App() {
     
     const bust = p.score - total < 0 || p.score - total === 1;
     if (!bust) p.score -= total;
+    
+    // Stats Update
+    p.dartsThrown += currentRound.length;
+    p.avg = ((gameMode - p.score) / (p.dartsThrown / 3) || 0).toFixed(1);
 
     setLastStats({ total, rest: p.score, name: p.name });
     setShowTV(true);
@@ -121,71 +100,130 @@ export default function App() {
       setShowTV(false);
       setCurrentRound([]);
       setCurrentPlayerIdx((currentPlayerIdx + 1) % players.length);
-    }, 2800);
+    }, 3000);
   };
 
-  /* 4. RENDERING */
+  /* ─────────────── UI KOMPONENTEN ─────────────── */
+
   if (loadingAI) return (
     <div style={styles.screenCenter}>
-      <div style={styles.logoBox}>DH</div>
-      <h2 style={{color: COLORS.primary}}>DART HOST TWO</h2>
-      <div style={styles.progressBar}>
-        <div style={{...styles.progressFill, width: loadProgress.includes("%") ? loadProgress.split(":")[1].trim() : "10%"}} />
-      </div>
-      <p>{loadProgress}</p>
-      <div style={{marginTop: 20, fontSize: 10, color: COLORS.textMuted}}>
-        Isolation: {isIsolated ? "✅" : "❌"}
-      </div>
-      {errorDetail && <p style={styles.errorText}>{errorDetail}</p>}
+      <div style={styles.logoBoxLarge}>DH</div>
+      <h2 style={{color: COLORS.primary, letterSpacing: 4, marginTop: 20}}>DART HOST</h2>
+      <div style={styles.progressBar}><div style={{...styles.progressFill, width: loadProgress.includes("%") ? loadProgress.split(":")[1].trim() : "10%"}} /></div>
+      <p style={{fontSize: 14, color: COLORS.textMuted}}>{loadProgress}</p>
     </div>
   );
 
   if (phase === "setup") return (
     <div style={styles.screen}>
-      <div style={styles.logoBox}>DH</div>
-      <div style={styles.card}>
-        <label style={styles.label}>MODUS</label>
+      <div style={{textAlign: 'center', marginTop: 40}}>
+        <h1 style={styles.setupTitle}>DART HOST</h1>
+        <p style={styles.setupSubtitle}>PREMIUM SCOREBOARD ASSISTANT</p>
+      </div>
+      
+      <div style={styles.setupCard}>
+        <label style={styles.label}>SPIELMODUS</label>
         <div style={styles.row}>
-          {[301, 501].map(m => (
-            <button key={m} onClick={() => setGameMode(m)} style={{...styles.btn, backgroundColor: gameMode === m ? COLORS.primary : COLORS.bg, color: gameMode === m ? "#000" : "#fff"}}>{m}</button>
+          {[301, 501, 701].map(m => (
+            <button key={m} onClick={() => setGameMode(m)} style={{...styles.modeBtn, backgroundColor: gameMode === m ? COLORS.primary : COLORS.bg, color: gameMode === m ? "#000" : "#fff"}}>{m}</button>
           ))}
         </div>
-        <input style={styles.input} placeholder="Name..." onKeyDown={(e) => {
-          if(e.key === 'Enter' && e.target.value) { setPlayers([...players, {name: e.target.value, score: gameMode}]); e.target.value=""; }
+
+        <label style={styles.label}>SPIELER ({players.length}/4)</label>
+        <input style={styles.input} placeholder="Name eingeben..." onKeyDown={(e) => {
+          if(e.key === 'Enter' && e.target.value) { 
+            setPlayers([...players, {name: e.target.value, score: gameMode, avg: "0.0", dartsThrown: 0}]); 
+            e.target.value=""; 
+          }
         }} />
-        {players.map((p, i) => <div key={i} style={styles.playerTag}>{p.name}</div>)}
-        <button onClick={() => players.length > 0 && setPhase("playing")} style={styles.startBtn}>START</button>
+        
+        <div style={styles.playerList}>
+          {players.map((p, i) => (
+            <div key={i} style={styles.playerTag}>
+              <span>0{i+1} {p.name}</span>
+              <button onClick={() => setPlayers(players.filter((_, idx) => idx !== i))} style={styles.delBtn}>✕</button>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={() => players.length > 0 && setPhase("playing")} style={styles.startBtn}>SPIEL STARTEN ▶</button>
+        <button style={styles.historyBtn}>VERLAUF</button>
       </div>
     </div>
   );
 
+  const activeP = players[currentPlayerIdx];
+
   return (
     <div style={styles.screen}>
+      {/* TV OVERLAY */}
       {showTV && (
         <div style={styles.tvOverlay}>
-          <div style={{color: COLORS.primary, fontSize: 24}}>{lastStats.name}</div>
+          <div style={{color: COLORS.primary, fontSize: 24, fontWeight: 700}}>{lastStats.name}</div>
           <div style={{fontSize: 140, fontWeight: 900}}>{lastStats.total}</div>
           <div style={{fontSize: 32, color: COLORS.textMuted}}>REST: {lastStats.rest}</div>
         </div>
       )}
-      <div style={styles.commentBox}>"{comment}"</div>
-      <div style={styles.playerGrid}>
+
+      {/* HEADER */}
+      <header style={styles.header}>
+        <div style={styles.logoBoxSmall}>DH</div>
+        <div>
+          <div style={{fontSize: 18, fontWeight: 900}}>DART HOST</div>
+          <div style={{fontSize: 10, color: COLORS.primary, letterSpacing: 1}}>LIVE MATCH</div>
+        </div>
+        <div style={{marginLeft: 'auto', display: 'flex', gap: 15}}>
+          <button style={styles.iconBtn} onClick={() => setCurrentRound([])}>↺</button>
+          <button style={styles.iconBtn} onClick={() => setPhase("setup")}>✕</button>
+        </div>
+      </header>
+
+      {/* HOST KOMMENTAR */}
+      <div style={styles.commentBox}>
+        <div style={{fontSize: 10, fontWeight: 900, color: COLORS.primary, marginBottom: 4}}>📢 HOST KOMMENTAR</div>
+        <div style={{fontStyle: 'italic', fontSize: 15}}>"{comment}"</div>
+      </div>
+
+      {/* SPIELER SCOREBOARD */}
+      <div style={styles.scoreboard}>
         {players.map((p, i) => (
-          <div key={i} style={{...styles.playerCard, opacity: i === currentPlayerIdx ? 1 : 0.5, borderLeft: i === currentPlayerIdx ? `4px solid ${COLORS.primary}` : 'none'}}>
-            <div style={{fontSize: 20, fontWeight: 800}}>{p.name}</div>
-            <div style={{fontSize: 44, fontWeight: 900}}>{p.score}</div>
+          <div key={i} style={{...styles.playerCard, borderLeft: i === currentPlayerIdx ? `4px solid ${COLORS.primary}` : 'none', opacity: i === currentPlayerIdx ? 1 : 0.5}}>
+             <div style={{fontSize: 10, color: COLORS.textMuted}}>SPIELER {i+1}</div>
+             <div style={{fontSize: 22, fontWeight: 800, color: i === currentPlayerIdx ? COLORS.primary : "#fff"}}>{p.name}</div>
+             <div style={{fontSize: 48, fontWeight: 900, margin: '5px 0'}}>{p.score}</div>
+             <div style={styles.statRow}>
+               <span>AVG: {p.avg}</span>
+               <span>DARTS: {p.dartsThrown}</span>
+             </div>
           </div>
         ))}
       </div>
+
+      {/* RUNDEN BEREICH */}
       <div style={styles.roundCard}>
         <div style={styles.dartRow}>
           {[0,1,2].map(i => <div key={i} style={styles.dartSlot}>{currentRound[i]?.label || "-"}</div>)}
         </div>
-        <button onClick={finishRound} style={styles.finishBtn}>OK</button>
+        <div style={{fontSize: 56, fontWeight: 900, color: COLORS.primary}}>{currentRound.reduce((s,d) => s + d.val, 0)}</div>
+        <div style={{fontSize: 10, color: COLORS.textMuted, marginBottom: 15}}>PUNKTE GESAMT</div>
+        
+        <button onClick={finishRound} style={styles.finishBtn}>RUNDE ABSCHLIESSEN</button>
+        <div style={styles.actionRow}>
+          <button style={styles.subBtn} onClick={() => setCurrentRound(currentRound.slice(0,-1))}>LÖSCHEN</button>
+          <button style={styles.subBtn} onClick={() => addDart(0)}>FEHLWURF</button>
+        </div>
       </div>
+
+      {/* INPUT TOGGLE */}
+      <div style={styles.inputToggle}>
+        <button onClick={() => setInputMode("keypad")} style={{...styles.toggleBtn, backgroundColor: inputMode === 'keypad' ? COLORS.primary : 'transparent', color: inputMode === 'keypad' ? '#000' : COLORS.textMuted}}>KEYPAD EINGABE</button>
+        <button onClick={() => setInputMode("board")} style={{...styles.toggleBtn, backgroundColor: inputMode === 'board' ? COLORS.primary : 'transparent', color: inputMode === 'board' ? '#000' : COLORS.textMuted}}>BOARD EINGABE</button>
+      </div>
+
+      {/* KEYPAD */}
       <div style={styles.keypad}>
         <div style={styles.row}>
-          {["S", "D", "T"].map((m, i) => (
+          {["SINGLE", "DOUBLE", "TRIPLE"].map((m, i) => (
             <button key={m} onClick={() => setMultiplier(i+1)} style={{...styles.multBtn, backgroundColor: multiplier === i+1 ? "#fff" : COLORS.bg, color: multiplier === i+1 ? "#000" : "#fff"}}>{m}</button>
           ))}
         </div>
@@ -193,8 +231,8 @@ export default function App() {
           {[...Array(20)].map((_, i) => (
             <button key={i} onClick={() => addDart(i+1)} style={styles.gridBtn}>{i+1}</button>
           ))}
-          <button onClick={() => addDart(25)} style={{...styles.gridBtn, color: COLORS.danger}}>BULL</button>
-          <button onClick={() => addDart(0)} style={styles.gridBtn}>0</button>
+          <button onClick={() => addDart(25)} style={{...styles.gridBtn, backgroundColor: COLORS.danger}}>BULL</button>
+          <button onClick={() => addDart(0)} style={styles.gridBtn}>MISS</button>
         </div>
       </div>
     </div>
@@ -202,29 +240,40 @@ export default function App() {
 }
 
 const styles = {
-  screen: { backgroundColor: COLORS.bg, minHeight: "100vh", color: "#fff", padding: "16px", display: "flex", flexDirection: "column", gap: "16px", fontFamily: "sans-serif" },
-  screenCenter: { backgroundColor: COLORS.bg, height: "100vh", color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px", textAlign: "center" },
-  logoBox: { width: 50, height: 50, backgroundColor: COLORS.primary, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 900, color: "#000", alignSelf: "center" },
-  card: { backgroundColor: COLORS.card, padding: 20, borderRadius: 24, display: "flex", flexDirection: "column", gap: 12, width: "100%", boxSizing: "border-box" },
+  screen: { backgroundColor: COLORS.bg, minHeight: "100vh", color: "#fff", padding: "16px", fontFamily: "'Inter', sans-serif", display: 'flex', flexDirection: 'column', gap: "16px" },
+  screenCenter: { backgroundColor: COLORS.bg, height: "100vh", display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: "40px" },
+  logoBoxLarge: { width: 60, height: 60, backgroundColor: COLORS.primary, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 900, color: "#000" },
+  logoBoxSmall: { width: 42, height: 42, backgroundColor: COLORS.primary, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 900, color: "#000" },
+  setupTitle: { fontSize: 48, fontWeight: 900, color: COLORS.primary, margin: 0 },
+  setupSubtitle: { fontSize: 11, color: COLORS.textMuted, letterSpacing: 2, marginBottom: 30 },
+  setupCard: { backgroundColor: COLORS.card, padding: 24, borderRadius: 28, display: 'flex', flexDirection: 'column', gap: 16 },
+  header: { display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 5 },
+  iconBtn: { background: 'none', border: 'none', color: COLORS.textMuted, fontSize: 22 },
+  commentBox: { backgroundColor: COLORS.card, padding: 16, borderRadius: 20, borderLeft: `4px solid ${COLORS.primary}` },
+  scoreboard: { display: 'flex', flexDirection: 'column', gap: 12 },
+  playerCard: { backgroundColor: COLORS.card, padding: 16, borderRadius: 22 },
+  statRow: { display: 'flex', justifyContent: 'space-between', fontSize: 11, color: COLORS.textMuted, marginTop: 5 },
+  roundCard: { backgroundColor: COLORS.card, padding: 20, borderRadius: 28, textAlign: 'center' },
+  dartRow: { display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 12 },
+  dartSlot: { width: 55, height: 55, backgroundColor: COLORS.bg, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 800, border: '1px solid #334155' },
+  finishBtn: { backgroundColor: COLORS.primary, color: "#000", width: "100%", padding: 18, borderRadius: 16, fontWeight: 900, border: 'none', fontSize: 16 },
+  actionRow: { display: 'flex', gap: 10, marginTop: 12 },
+  subBtn: { flex: 1, backgroundColor: "#334155", color: "#fff", padding: 12, borderRadius: 12, border: 'none', fontWeight: 700, fontSize: 13 },
+  inputToggle: { display: 'flex', backgroundColor: COLORS.card, borderRadius: 14, padding: 5 },
+  toggleBtn: { flex: 1, padding: 10, borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 11 },
+  keypad: { backgroundColor: COLORS.card, padding: 16, borderRadius: 24, marginTop: 'auto' },
+  multBtn: { flex: 1, padding: 12, borderRadius: 10, border: 'none', fontWeight: 800, fontSize: 13 },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginTop: 15 },
+  gridBtn: { backgroundColor: COLORS.bg, border: 'none', color: '#fff', padding: "16px 0", borderRadius: 12, fontWeight: 700, fontSize: 16 },
+  modeBtn: { flex: 1, padding: 15, borderRadius: 12, border: 'none', fontWeight: 800 },
+  input: { backgroundColor: COLORS.bg, border: '1px solid #334155', padding: 16, borderRadius: 14, color: "#fff", fontSize: 16 },
+  playerTag: { backgroundColor: COLORS.bg, padding: 14, borderRadius: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700 },
+  startBtn: { backgroundColor: COLORS.primary, color: "#000", padding: 20, borderRadius: 18, fontWeight: 900, border: 'none', fontSize: 18, marginTop: 10 },
+  historyBtn: { background: 'none', border: 'none', color: COLORS.textMuted, fontWeight: 700, fontSize: 14, marginTop: 5 },
+  tvOverlay: { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(15,23,42,0.98)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
+  progressBar: { width: '100%', height: 8, backgroundColor: COLORS.card, borderRadius: 4, overflow: 'hidden', margin: '20px 0' },
+  progressFill: { height: '100%', backgroundColor: COLORS.primary, transition: 'width 0.4s' },
   label: { fontSize: 11, fontWeight: 800, color: COLORS.textMuted },
-  row: { display: "flex", gap: 10 },
-  btn: { flex: 1, padding: 12, borderRadius: 10, border: "none", fontWeight: 800 },
-  input: { backgroundColor: COLORS.bg, border: "1px solid #334155", padding: 15, borderRadius: 12, color: "#fff" },
-  playerTag: { backgroundColor: COLORS.bg, padding: 10, borderRadius: 10, marginTop: 5 },
-  startBtn: { backgroundColor: "#fff", color: "#000", padding: 16, borderRadius: 15, fontWeight: 900, border: "none" },
-  commentBox: { backgroundColor: COLORS.card, padding: 15, borderRadius: 15, borderLeft: `4px solid ${COLORS.primary}`, fontStyle: "italic" },
-  playerGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  playerCard: { backgroundColor: COLORS.card, padding: 15, borderRadius: 20 },
-  roundCard: { backgroundColor: COLORS.card, padding: 20, borderRadius: 24, textAlign: "center" },
-  dartRow: { display: "flex", justifyContent: "center", gap: 8, marginBottom: 10 },
-  dartSlot: { width: 50, height: 50, backgroundColor: COLORS.bg, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #334155" },
-  finishBtn: { backgroundColor: COLORS.primary, color: "#000", width: "100%", padding: 15, borderRadius: 12, fontWeight: 800, border: "none" },
-  keypad: { backgroundColor: COLORS.card, padding: 12, borderRadius: 20, marginTop: "auto" },
-  grid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginTop: 10 },
-  gridBtn: { backgroundColor: COLORS.bg, border: "none", color: "#fff", padding: "12px 0", borderRadius: 8, fontWeight: 700 },
-  multBtn: { flex: 1, padding: 8, borderRadius: 8, border: "none" },
-  tvOverlay: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(15,23,42,0.98)", zIndex: 1000, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" },
-  progressBar: { width: "100%", height: 6, backgroundColor: COLORS.card, borderRadius: 3, margin: "20px 0", overflow: "hidden" },
-  progressFill: { height: "100%", backgroundColor: COLORS.primary, transition: "width 0.3s" },
-  errorText: { color: COLORS.danger, fontSize: 10, marginTop: 10 }
+  row: { display: 'flex', gap: 10 },
+  delBtn: { background: 'none', border: 'none', color: COLORS.danger, fontSize: 18 }
 };
