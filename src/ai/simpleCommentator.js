@@ -1,10 +1,13 @@
 export function simpleCommentary(round, scoreBefore, scoreAfter){
 
-  const throws = round.map(d => d.value)
-  const sum = throws.reduce((a,b)=>a+b,0)
+  if(!round) return ""
+
+  const values = round.map(d => d.value)
+
+  const sum = values.reduce((a,b)=>a+b,0)
 
   if(sum === 180){
-    return "Drei perfekte Treffer. Das sind 180 Punkte."
+    return "Drei perfekte Treffer. Einhundertachtzig Punkte."
   }
 
   if(sum >= 140){
@@ -12,7 +15,11 @@ export function simpleCommentary(round, scoreBefore, scoreAfter){
   }
 
   if(scoreAfter === 0){
-    return "Spiel beendet. Der Spieler gewinnt dieses Leg."
+    return "Der Spieler gewinnt dieses Leg."
+  }
+
+  if(sum === 0){
+    return "Leider kein Treffer in dieser Runde."
   }
 
   return `Der Spieler erzielt ${sum} Punkte`
