@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import * as webllm from "@mlc-ai/web-llm";
 
+[span_3](start_span)// Utility Imports[span_3](end_span)
 import { translateRound } from "./utils/dartTranslator"
 import { simpleCommentary } from "./ai/simpleCommentator"
 import { detectHighscore } from "./game/highscoreDetector"
 import { getCheckoutSuggestion } from "./game/checkoutHelper"
-
 
 /* ─────────────── DESIGN SYSTEM ─────────────── */
 const COLORS = {
@@ -18,28 +18,27 @@ const COLORS = {
   accent: "#3B82F6"
 };
 
-const SELECTED_MODEL = "Gemma-2b-it-q4f16_1-MLC";
+const SELECTED_MODEL = "Gemma-2b-it-q4f16_1-MLC"; [span_4](start_span)//[span_4](end_span)
 
 export default function App() {
-  // KI-System
+  [span_5](start_span)// KI-System States[span_5](end_span)
   const [engine, setEngine] = useState(null);
   const [loadingAI, setLoadingAI] = useState(true);
   const [loadProgress, setLoadProgress] = useState("System-Check...");
   
-  // Setup-Logik
-  const [phase, setPhase] = useState("setup"); 
-  const [playerName, setPlayerName] = useState(""); // NEU: State für das Input-Feld
+  [span_6](start_span)// Setup-Logik States[span_6](end_span)
+  const [phase, setPhase] = useState("setup");
+  const [playerName, setPlayerName] = useState(""); 
   const [players, setPlayers] = useState([]);
   const [gameMode, setGameMode] = useState(501);
 
-  // Game-Logik
+  [span_7](start_span)// Game-Logik States[span_7](end_span)
   const [currentPlayerIdx, setCurrentPlayerIdx] = useState(0);
   const [currentRound, setCurrentRound] = useState([]);
   const [multiplier, setMultiplier] = useState(1);
   const [comment, setComment] = useState("Willkommen beim Match!");
   const [showTV, setShowTV] = useState(false);
   const [lastStats, setLastStats] = useState({ total: 0, rest: 0, name: "" });
-  const [inputMode, setInputMode] = useState("keypad");
 
   /* ─────────────── KI INITIALISIERUNG ─────────────── */
   useEffect(() => {
@@ -50,7 +49,7 @@ export default function App() {
         const engineInstance = await webllm.CreateWebWorkerMLCEngine(worker, SELECTED_MODEL, { 
           initProgressCallback: (p) => setLoadProgress(`Gehirn wird geladen: ${Math.round(p.progress * 100)}%`)
         });
-        setEngine(engineInstance);
+        [span_8](start_span)setEngine(engineInstance); //[span_8](end_span)
         setLoadingAI(false);
       } catch (e) {
         console.error("AI Error:", e);
@@ -64,17 +63,17 @@ export default function App() {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "de-DE";
+    u.lang = "de-DE"; [span_9](start_span)//[span_9](end_span)
     window.speechSynthesis.speak(u);
   };
 
   const fetchAIComment = async (total, rest, name, bust) => {
-    if (!engine) return `${name} wirft ${total}. Rest ${rest}.`;
+    if (!engine) return `${name} wirft ${total}. Rest ${rest}.`; [span_10](start_span)//[span_10](end_span)
     try {
-      const prompt = `Du bist ein frecher Dart-Moderator. Spieler: ${name}, Wurf: ${total}, Rest: ${rest}. ${bust ? 'Bust!' : ''} Antworte kurz, witzig, auf Deutsch. Max 12 Wörter.`;
-      const reply = await engine.chat.completions.create({ messages: [{ role: "user", content: prompt }] });
+      const prompt = `Du bist ein frecher Dart-Moderator. Spieler: ${name}, Wurf: ${total}, Rest: ${rest}. ${bust ? 'Bust!' : ''} Antworte kurz, witzig, auf Deutsch. Max 12 Wörter.`; [span_11](start_span)//[span_11](end_span)
+      const reply = await engine.chat.completions.create({ messages: [{ role: "user", content: prompt }] }); [span_12](start_span)//[span_12](end_span)
       return reply.choices[0].message.content;
-    } catch (e) { return `${name} wirft ${total}.`; }
+    } catch (e) { return `${name} wirft ${total}.`; [span_13](start_span)} //[span_13](end_span)
   };
 
   /* ─────────────── SPIEL-AKTIONEN ─────────────── */
@@ -86,37 +85,76 @@ export default function App() {
         avg: "0.0", 
         dartsThrown: 0 
       }]);
-      setPlayerName(""); // Feld leeren
+      setPlayerName(""); [span_14](start_span)// Feld leeren[span_14](end_span)
     }
   };
 
   const addDart = (val) => {
-    if (currentRound.length >= 3) return;
+    if (currentRound.length >= 3) return; [span_15](start_span)//[span_15](end_span)
     const score = val * multiplier;
-    const label = val === 0 ? "Miss" : (multiplier === 3 ? `T${val}` : multiplier === 2 ? `D${val}` : `${val}`);
-    setCurrentRound([...currentRound, { val: score, label }]);
+    const label = val === 0 ? "Miss" : (multiplier === 3 ? `T${val}` : multiplier === 2 ? `D${val}` : `${val}`); [span_16](start_span)//[span_16](end_span)
+    setCurrentRound([...currentRound, { val: score, label }]); [span_17](start_span)//[span_17](end_span)
     setMultiplier(1);
     if (navigator.vibrate) navigator.vibrate(20);
   };
 
   const finishRound = async () => {
     if (currentRound.length === 0) return;
+
     const total = currentRound.reduce((s, d) => s + d.val, 0);
     const newPlayers = [...players];
     const p = newPlayers[currentPlayerIdx];
-    
+
     const bust = p.score - total < 0 || p.score - total === 1;
-    if (!bust) p.score -= total;
-    
+
+    if (!bust) {
+      p.score -= total;
+    }
+
     p.dartsThrown += currentRound.length;
     p.avg = ((gameMode - p.score) / (p.dartsThrown / 3) || 0).toFixed(1);
+    setPlayers(newPlayers);
 
-    setLastStats({ total, rest: p.score, name: p.name });
-    setShowTV(true);
-    
-    const aiResponse = await fetchAIComment(total, p.score, p.name, bust);
+    /* ---------- Einfache Sprache ---------- */
+    const simpleThrows = translateRound(currentRound);
+    const simpleComment = simpleCommentary(currentRound, p.score + total, p.score);
+
+    /* ---------- Highscore erkennen ---------- */
+    const highscore = detectHighscore(currentRound);
+    let extraComment = "";
+    if (highscore === "180") {
+      extraComment = "Perfekte Runde! Einhundertachtzig Punkte.";
+    } else if (highscore === "140+") {
+      extraComment = "Sehr starke Runde über einhundertvierzig Punkte.";
+    }
+
+    /* ---------- Checkout Empfehlung ---------- */
+    const checkout = getCheckoutSuggestion(p.score);
+    if (checkout) {
+      extraComment += ` Empfehlung: ${checkout}`;
+    }
+
+    /* ---------- Kommentar zusammensetzen ---------- */
+    const baseComment = `${p.name}: ${simpleThrows}. ${simpleComment}.`;
+    let aiResponse = baseComment;
+
+    if (engine) {
+      try {
+        const aiComment = await fetchAIComment(total, p.score, p.name, bust);
+        aiResponse = `${baseComment} ${aiComment}`;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    if (extraComment !== "") {
+      aiResponse += " " + extraComment;
+    }
+
     setComment(aiResponse);
     speak(aiResponse);
+    setLastStats({ total, rest: p.score, name: p.name });
+    setShowTV(true);
 
     setTimeout(() => {
       setShowTV(false);
@@ -187,8 +225,6 @@ export default function App() {
       </div>
     </div>
   );
-
-  const activeP = players[currentPlayerIdx];
 
   return (
     <div style={styles.screen}>
