@@ -1,67 +1,112 @@
-import { classifyEvent, shouldSpeak, buildRuleBasedLine, buildIdleLine } from './commentaryRules';
-    import { rememberMessage } from './commentaryMemory';
+import {
+  classifyEvent,
+  shouldSpeak,
+  buildRuleBasedLine,
+  buildIdleLine
+} from './commentaryRules';
+import { rememberMessage } from './commentaryMemory';
 
-    export async function createModerationLine({
-      engine,
-      memory,
-      context,
-      useAI = true,
-    }) {
-      const eventType = classifyEvent(context);
-      const speakNow = shouldSpeak({
-        eventType,
-        secondsSinceLastInput: context.secondsSinceLastInput,
-        fastGame: context.fastGame,
-      });
+export async function createModerationLine({
+  engine,
+  memory,
+  context,
+  useAI = true
+}) {
+  const eventType = classifyEvent(context);
 
-      if (!speakNow) {
-        return { text: '', eventType, skipped: true };
-      }
+  const speakNow = shouldSpeak({
+    eventType,
+    secondsSinceLastInput: context.secondsSinceLastInput,
+    fastGame: context.fastGame
+  });
 
-      const fallback = buildRuleBasedLine({ ...context, eventType });
+  if (!speakNow) {
+    return {
+      text: '',
+      eventType,
+      skipped: true
+    };
+  }
 
-      if (!useAI || !engine || context.fastGame) {
-        rememberMessage(memory, eventType, fallback);
-        return { text: fallback, eventType, skipped: false, source: 'rules' };
-      }
+  const fallback = buildRuleBasedLine({
+    ...context,
+    eventType
+  });
 
-      try {
-        const prompt = [
-          'Du bist ein charismatischer deutscher Dart-Caller.',
-          'Sprich kurz, pointiert, sympathisch und leicht humorvoll.',
-          'Keine langen Sätze. Maximal 14 Wörter.',
-          'Keine Hashtags, keine Emojis, keine Erklärungen.',
-          `Spieler: ${context.playerName}`,
-          `Wurf gesamt: ${context.total}`,
-          `Rest: ${context.rest}`,
-          `Ereignis: ${eventType}`,
-          `Runde: ${context.turnNumber}`,
-          `Aktiver Spieler: ${context.playerName}`,
-          context.checkout ? `Checkout-Vorschlag: ${context.checkout}` : '',
-          context.bust ? 'Bust ist eingetreten.' : '',
-          context.wonLeg ? 'Der Spieler hat das Leg gewonnen.' : '',
-          'Antworte nur mit einem einzigen Satz auf Deutsch.'
-        ].filter(Boolean).join('
-');
+  if (!useAI || !engine || context.fastGame) {
+    rememberMessage(memory, eventType, fallback);
+    return {
+      text: fallback,
+      eventType,
+      skipped: false,
+      source: 'rules'
+    };
+  }
 
-        const reply = await engine.chat.completions.create({
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.8,
-        });
+  try {
+    const prompt = [
+      'Du bist ein charismatischer deutscher Dart-Caller.',
+      'Sprich kurz, pointiert, sympathisch und leicht humorvoll.',
+      'Keine langen Sätze. Maximal 14 Wörter.',
+      'Keine Hashtags, keine Emojis, keine Erklärungen.',
+      `Spieler: ${context.playerName}`,
+      `Wurf gesamt: ${context.total}`,
+      `Rest: ${context.rest}`,
+      `Ereignis: ${eventType}`,
+      `Runde: ${context.turnNumber}`,
+      `Aktiver Spieler: ${context.playerName}`,
+      context.checkout ? `Checkout-Vorschlag: ${context.checkout}` : '',
+      context.bust ? 'Bust ist eingetreten.' : '',
+      context.wonLeg ? 'Der Spieler hat das Leg gewonnen.' : '',
+      'Antworte nur mit einem einzigen Satz auf Deutsch.'
+    ].filter(Boolean).join('\n');
 
-        const text = reply?.choices?.[0]?.message?.content?.trim() || fallback;
-        rememberMessage(memory, eventType, text);
-        return { text, eventType, skipped: false, source: 'ai' };
-      } catch (error) {
-        rememberMessage(memory, eventType, fallback);
-        return { text: fallback, eventType, skipped: false, source: 'rules', error: String(error) };
-      }
-    }
+    const reply = await engine.chat.completions.create({
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.8
+    });
 
-    export function createIdleModeration({ memory, currentPlayerName, secondsSinceLastInput }) {
-      if (secondsSinceLastInput < 20 || memory.idleTriggered) return '';
-      memory.idleTriggered = true;
-      const text = buildIdleLine(currentPlayerName);
-      rememberMessage(memory, 'idle', text);
-      return text;
-    }
+    const text = reply?.choices?.[0]?.message?.content?.trim() || fallback;
+
+    rememberMessage(memory, eventType, text);
+
+    return {
+      text,
+      eventType,
+      skipped: false,
+      source: 'ai'
+    };
+  } catch (error) {
+    rememberMessage(memory, eventType, fallback);
+
+    return {
+      text: fallback,
+      eventType,
+      skipped: false,
+      source: 'rules',
+      error: String(error)
+    };
+  }
+}
+
+export function createIdleModeration({
+  memory,
+  currentPlayerName,
+  secondsSinceLastInput
+}) {
+  if (secondsSinceLastInput < 20 || memory.idleTriggered) {
+    return '';
+  }
+
+  memory.idleTriggered = true;
+
+  const text = buildIdleLine(currentPlayerName);
+  rememberMessage(memory, 'idle', text);
+
+  return text;
+}
