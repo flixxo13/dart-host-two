@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from "react";
 import * as webllm from "@mlc-ai/web-llm";
 
+import { translateRound } from "./utils/dartTranslator"
+import { simpleCommentary } from "./ai/simpleCommentator"
+import { detectHighscore } from "./game/highscoreDetector"
+import { getCheckoutSuggestion } from "./game/checkoutHelper"
+
+
 /* ─────────────── DESIGN SYSTEM ─────────────── */
 const COLORS = {
   bg: "#0F172A",
