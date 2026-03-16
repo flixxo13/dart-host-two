@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import * as webllm from "@mlc-ai/web-llm";
 
-[span_3](start_span)// Utility Imports[span_3](end_span)
-import { translateRound } from "./utils/dartTranslator"
-import { simpleCommentary } from "./ai/simpleCommentator"
-import { detectHighscore } from "./game/highscoreDetector"
-import { getCheckoutSuggestion } from "./game/checkoutHelper"
+// Hilfsfunktionen für die Moderation und Spiellogik
+import { translateRound } from "./utils/dartTranslator";
+import { simpleCommentary } from "./ai/simpleCommentator";
+import { detectHighscore } from "./game/highscoreDetector";
+import { getCheckoutSuggestion } from "./game/checkoutHelper";
 
 /* ─────────────── DESIGN SYSTEM ─────────────── */
 const COLORS = {
@@ -18,21 +18,21 @@ const COLORS = {
   accent: "#3B82F6"
 };
 
-const SELECTED_MODEL = "Gemma-2b-it-q4f16_1-MLC"; [span_4](start_span)//[span_4](end_span)
+const SELECTED_MODEL = "Gemma-2b-it-q4f16_1-MLC";
 
 export default function App() {
-  [span_5](start_span)// KI-System States[span_5](end_span)
+  // KI-System
   const [engine, setEngine] = useState(null);
   const [loadingAI, setLoadingAI] = useState(true);
   const [loadProgress, setLoadProgress] = useState("System-Check...");
   
-  [span_6](start_span)// Setup-Logik States[span_6](end_span)
+  // Setup-Logik
   const [phase, setPhase] = useState("setup");
   const [playerName, setPlayerName] = useState(""); 
   const [players, setPlayers] = useState([]);
   const [gameMode, setGameMode] = useState(501);
 
-  [span_7](start_span)// Game-Logik States[span_7](end_span)
+  // Game-Logik
   const [currentPlayerIdx, setCurrentPlayerIdx] = useState(0);
   const [currentRound, setCurrentRound] = useState([]);
   const [multiplier, setMultiplier] = useState(1);
@@ -49,7 +49,7 @@ export default function App() {
         const engineInstance = await webllm.CreateWebWorkerMLCEngine(worker, SELECTED_MODEL, { 
           initProgressCallback: (p) => setLoadProgress(`Gehirn wird geladen: ${Math.round(p.progress * 100)}%`)
         });
-        [span_8](start_span)setEngine(engineInstance); //[span_8](end_span)
+        setEngine(engineInstance);
         setLoadingAI(false);
       } catch (e) {
         console.error("AI Error:", e);
@@ -63,17 +63,19 @@ export default function App() {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "de-DE"; [span_9](start_span)//[span_9](end_span)
+    u.lang = "de-DE";
     window.speechSynthesis.speak(u);
   };
 
   const fetchAIComment = async (total, rest, name, bust) => {
-    if (!engine) return `${name} wirft ${total}. Rest ${rest}.`; [span_10](start_span)//[span_10](end_span)
+    if (!engine) return `${name} wirft ${total}. Rest ${rest}.`;
     try {
-      const prompt = `Du bist ein frecher Dart-Moderator. Spieler: ${name}, Wurf: ${total}, Rest: ${rest}. ${bust ? 'Bust!' : ''} Antworte kurz, witzig, auf Deutsch. Max 12 Wörter.`; [span_11](start_span)//[span_11](end_span)
-      const reply = await engine.chat.completions.create({ messages: [{ role: "user", content: prompt }] }); [span_12](start_span)//[span_12](end_span)
+      const prompt = `Du bist ein frecher Dart-Moderator. Spieler: ${name}, Wurf: ${total}, Rest: ${rest}. ${bust ? 'Bust!' : ''} Antworte kurz, witzig, auf Deutsch. Max 12 Wörter.`;
+      const reply = await engine.chat.completions.create({ messages: [{ role: "user", content: prompt }] });
       return reply.choices[0].message.content;
-    } catch (e) { return `${name} wirft ${total}.`; [span_13](start_span)} //[span_13](end_span)
+    } catch (e) { 
+      return `${name} wirft ${total}.`; 
+    }
   };
 
   /* ─────────────── SPIEL-AKTIONEN ─────────────── */
@@ -85,15 +87,15 @@ export default function App() {
         avg: "0.0", 
         dartsThrown: 0 
       }]);
-      setPlayerName(""); [span_14](start_span)// Feld leeren[span_14](end_span)
+      setPlayerName("");
     }
   };
 
   const addDart = (val) => {
-    if (currentRound.length >= 3) return; [span_15](start_span)//[span_15](end_span)
+    if (currentRound.length >= 3) return;
     const score = val * multiplier;
-    const label = val === 0 ? "Miss" : (multiplier === 3 ? `T${val}` : multiplier === 2 ? `D${val}` : `${val}`); [span_16](start_span)//[span_16](end_span)
-    setCurrentRound([...currentRound, { val: score, label }]); [span_17](start_span)//[span_17](end_span)
+    const label = val === 0 ? "Miss" : (multiplier === 3 ? `T${val}` : multiplier === 2 ? `D${val}` : `${val}`);
+    setCurrentRound([...currentRound, { val: score, label }]);
     setMultiplier(1);
     if (navigator.vibrate) navigator.vibrate(20);
   };
@@ -104,7 +106,6 @@ export default function App() {
     const total = currentRound.reduce((s, d) => s + d.val, 0);
     const newPlayers = [...players];
     const p = newPlayers[currentPlayerIdx];
-
     const bust = p.score - total < 0 || p.score - total === 1;
 
     if (!bust) {
@@ -113,6 +114,7 @@ export default function App() {
 
     p.dartsThrown += currentRound.length;
     p.avg = ((gameMode - p.score) / (p.dartsThrown / 3) || 0).toFixed(1);
+    
     setPlayers(newPlayers);
 
     /* ---------- Einfache Sprache ---------- */
@@ -122,9 +124,11 @@ export default function App() {
     /* ---------- Highscore erkennen ---------- */
     const highscore = detectHighscore(currentRound);
     let extraComment = "";
+
     if (highscore === "180") {
       extraComment = "Perfekte Runde! Einhundertachtzig Punkte.";
-    } else if (highscore === "140+") {
+    }
+    if (highscore === "140+") {
       extraComment = "Sehr starke Runde über einhundertvierzig Punkte.";
     }
 
