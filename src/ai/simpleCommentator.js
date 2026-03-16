@@ -1,26 +1,14 @@
-export function simpleCommentary(round, scoreBefore, scoreAfter){
+export function simpleCommentary(round, scoreBefore, scoreAfter) {
+  if (!round || round.length === 0) return '';
 
-  if(!round) return ""
+  const sum = round.reduce((acc, dart) => acc + dart.value, 0);
 
-  const values = round.map(d => d.value)
+  if (sum === 180) return 'Drei perfekte Darts. Einhundertachtzig Punkte.';
+  if (scoreAfter === 0) return 'Der Spieler gewinnt dieses Leg.';
+  if (sum >= 140) return `Sehr starke Runde mit ${sum} Punkten.`;
+  if (sum >= 100) return `Starke Aufnahme mit ${sum} Punkten.`;
+  if (sum === 0) return 'Leider kein zählbarer Treffer in dieser Runde.';
+  if (scoreBefore - sum < 0 || scoreBefore - sum === 1) return 'Das war ein Bust.';
 
-  const sum = values.reduce((a,b)=>a+b,0)
-
-  if(sum === 180){
-    return "Drei perfekte Treffer. Einhundertachtzig Punkte."
-  }
-
-  if(sum >= 140){
-    return `Sehr starke Runde mit ${sum} Punkten`
-  }
-
-  if(scoreAfter === 0){
-    return "Der Spieler gewinnt dieses Leg."
-  }
-
-  if(sum === 0){
-    return "Leider kein Treffer in dieser Runde."
-  }
-
-  return `Der Spieler erzielt ${sum} Punkte`
+  return `Der Spieler erzielt ${sum} Punkte.`;
 }
