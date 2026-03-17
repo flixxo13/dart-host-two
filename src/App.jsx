@@ -31,7 +31,7 @@ const COLORS = {
 
 /*const SELECTED_MODEL = 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC';*/
 
-const SELECTED_MODEL = 'TinyLlama-1.1B-Chat-v1.0-q4f32_1-MLC';
+/*const SELECTED_MODEL = 'TinyLlama-1.1B-Chat-v1.0-q4f32_1-MLC';*/
 
 
 
