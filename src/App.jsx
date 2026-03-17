@@ -93,14 +93,36 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  /* ─────────────── KI INITIALISIERUNG ─────────────── */
+   /* ─────────────── KI INITIALISIERUNG ─────────────── */
   useEffect(() => {
     async function initAI() {
       const gpuAvailable = !!navigator.gpu;
       setWebGpuAvailable(gpuAvailable);
 
+      if (!gpuAvailable) {
+        setLoadingAI(false);
+        setAiEnabled(false);
+        setAiStatus('fallback');
+        setComment('WebGPU nicht verfügbar. Regelbasierte Moderation aktiv.');
+        return;
+      }
+
       try {
-        if (!gpuAvailable) throw new Error('WebGPU nicht verfügbar');
+        if (typeof SharedArrayBuffer === 'undefined') {
+          throw new Error(
+            'SharedArrayBuffer nicht verfügbar. ' +
+            'COOP/COEP Header fehlen auf dem Server. ' +
+            'Bitte vercel.json mit Cross-Origin-Opener-Policy hinzufügen.'
+          );
+        }
+
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          throw new Error(
+            'WebGPU Adapter nicht gefunden. ' +
+            'GPU nicht unterstützt oder Browser-Flag fehlt.'
+          );
+        }
 
         const worker = new Worker(
           new URL('./ai-worker.js', import.meta.url),
@@ -121,17 +143,26 @@ export default function App() {
         setEngine(engineInstance);
         setLoadingAI(false);
         setAiStatus('active');
+
       } catch (error) {
-        console.error('AI init failed:', error);
+        const msg = error?.message || String(error);
+        console.error('AI init failed:', msg);
+
         setLoadingAI(false);
         setAiEnabled(false);
-        setAiStatus(navigator.gpu ? 'error' : 'fallback');
-        setComment('Offline-Regeln aktiv. KI konnte nicht geladen werden.');
+        setAiStatus('error');
+        setComment('KI Fehler: ' + msg.slice(0, 80));
+
+        setDebugInfo((prev) => ({
+          ...prev,
+          error: msg
+        }));
       }
     }
 
     initAI();
   }, []);
+
 
   /* ─────────────── IDLE MODERATION ─────────────── */
   useEffect(() => {
