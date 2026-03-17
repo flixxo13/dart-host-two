@@ -25,397 +25,420 @@ export function classifyEvent(context) {
 
 export function shouldSpeak({
   eventType,
-  secondsSinceLastInput,
-  fastGame,
   speechState,
   cooldowns
 }) {
-  if (eventType === 'finish' || eventType === 'perfect') return true;
+  // Kritische Events IMMER sprechen
+  if (eventType === 'finish') return true;
+  if (eventType === 'perfect') return true;
+  if (eventType === 'bust') return true;
   if (eventType === 'checkout') return true;
-  if (eventType === 'bust' && !speechState.speaking) return true;
+  if (eventType === 'highscore') return true;
 
-  if (speechState.speaking && eventType !== 'finish' && eventType !== 'perfect') {
-    return false;
-  }
+  // TTS spricht gerade — nicht unterbrechen
+  if (speechState && speechState.speaking) return false;
 
-  if (fastGame) {
-    return eventType === 'highscore' || eventType === 'checkout';
-  }
+  // Cooldown für normale Events
+  if (cooldowns && cooldowns.blockNormal && eventType === 'normal') return false;
 
-  if (secondsSinceLastInput >= 12) return true;
-  if (cooldowns.blockNormal && eventType === 'normal') return false;
-
-  return eventType !== 'normal';
+  return true;
 }
 
-function randomFrom(list = []) {
-  if (!list.length) return '';
+function randomFrom(list) {
+  if (!list || list.length === 0) return '';
   return list[Math.floor(Math.random() * list.length)];
 }
 
-function buildPersonaRuleText({ persona, eventType, playerName, total, rest, checkout }) {
-  const personaId = persona.id;
+function buildPersonaRuleText(persona, eventType, playerName, total, rest, checkout) {
+  var personaId = persona.id;
 
-  const variants = {
+  var variants = {
     classic: {
       finish: [
-        `${playerName} checkt das Leg. Sehr sauber gespielt.`,
-        `${playerName} macht das Leg zu. Starkes Finish.`
+        playerName + ' checkt das Leg. Sehr sauber gespielt.',
+        playerName + ' macht das Leg zu. Starkes Finish.'
       ],
       bust: [
-        `${playerName} überwirft sich. Bust.`,
-        `Bust von ${playerName}. Die Aufnahme zählt nicht.`
+        playerName + ' überwirft sich. Bust.',
+        'Bust von ' + playerName + '. Die Aufnahme zählt nicht.'
       ],
       perfect: [
-        `${playerName} mit 180. Exzellente Aufnahme.`,
-        `180 von ${playerName}. Höchste Qualität am Board.`
+        playerName + ' mit 180. Exzellente Aufnahme.',
+        '180 von ' + playerName + '. Höchste Qualität am Board.'
       ],
       highscore: [
-        `${playerName} erzielt starke ${total} Punkte.`,
-        `${total} Punkte von ${playerName}. Sehr gute Aufnahme.`
+        playerName + ' erzielt starke ' + total + ' Punkte.',
+        total + ' Punkte von ' + playerName + '. Sehr gute Aufnahme.'
       ],
       checkout: [
-        `${playerName} steht auf ${rest}. Checkout über ${checkout}.`,
-        `${rest} Rest für ${playerName}. Der Checkout ist gestellt: ${checkout}.`
+        playerName + ' steht auf ' + rest + '. Checkout über ' + checkout + '.',
+        rest + ' Rest für ' + playerName + '. Der Checkout: ' + checkout + '.'
       ],
       strong: [
-        `${playerName} bringt ${total} Punkte ans Board.`,
-        `${total} Punkte von ${playerName}. Solide Arbeit.`
+        playerName + ' bringt ' + total + ' Punkte ans Board.',
+        total + ' Punkte von ' + playerName + '. Solide Arbeit.'
       ],
       miss: [
-        `${playerName} bleibt in dieser Aufnahme ohne Wirkung.`,
-        `Keine zählbaren Treffer von ${playerName} in dieser Runde.`
+        playerName + ' bleibt in dieser Aufnahme ohne Wirkung.',
+        'Keine zählbaren Treffer von ' + playerName + '.'
       ],
       normal: [
-        `${playerName} wirft ${total}. Rest ${rest}.`,
-        `${total} Punkte für ${playerName}. Rest ${rest}.`
+        playerName + ' wirft ' + total + '. Rest ' + rest + '.',
+        total + ' Punkte für ' + playerName + '. Rest ' + rest + '.'
       ],
       idle: [
-        `${playerName} ist wieder am Oche. Ruhe bewahren, sauber werfen.`,
-        `${playerName} macht sich bereit. Die nächste Aufnahme folgt.`
+        playerName + ' ist wieder am Oche. Ruhe bewahren, sauber werfen.',
+        playerName + ' macht sich bereit. Die nächste Aufnahme folgt.'
       ]
     },
-
     showman: {
       finish: [
-        `${playerName} macht den Laden zu. Was für ein Finish.`,
-        `${playerName} checkt das Leg. Genau im richtigen Moment.`
+        playerName + ' macht den Laden zu. Was für ein Finish.',
+        playerName + ' checkt das Leg. Genau im richtigen Moment.'
       ],
       bust: [
-        `${playerName} geht drüber. Bust, und das tut weh.`,
-        `Bust von ${playerName}. Da war etwas zu viel Mut dabei.`
+        playerName + ' geht drüber. Bust, und das tut weh.',
+        'Bust von ' + playerName + '. Da war etwas zu viel Mut dabei.'
       ],
       perfect: [
-        `${playerName} zündet die 180. Ganz großes Kino.`,
-        `180 von ${playerName}. Das Board hat gerade gebrannt.`
+        playerName + ' zündet die 180. Ganz großes Kino.',
+        '180 von ' + playerName + '. Das Board hat gerade gebrannt.'
       ],
       highscore: [
-        `${total} Punkte von ${playerName}. Da ist richtig Zug drauf.`,
-        `${playerName} räumt groß ab mit ${total} Punkten.`
+        total + ' Punkte von ' + playerName + '. Da ist richtig Zug drauf.',
+        playerName + ' räumt groß ab mit ' + total + ' Punkten.'
       ],
       checkout: [
-        `${playerName} steht auf ${rest}. Der Checkout-Weg ist ${checkout}.`,
-        `${rest} Rest für ${playerName}. Das riecht nach Finish: ${checkout}.`
+        playerName + ' steht auf ' + rest + '. Das riecht nach Finish: ' + checkout + '.',
+        rest + ' Rest für ' + playerName + '. Checkout-Weg: ' + checkout + '.'
       ],
       strong: [
-        `${playerName} bringt starke ${total} ans Board.`,
-        `${total} Punkte von ${playerName}. Das war wichtig.`
+        playerName + ' bringt starke ' + total + ' ans Board.',
+        total + ' Punkte von ' + playerName + '. Das war wichtig.'
       ],
       miss: [
-        `${playerName} erwischt diesmal keinen brauchbaren Rhythmus.`,
-        `Eine stille Aufnahme von ${playerName}.`
+        playerName + ' erwischt diesmal keinen brauchbaren Rhythmus.',
+        'Eine stille Aufnahme von ' + playerName + '.'
       ],
       normal: [
-        `${playerName} nimmt ${total} mit. Rest ${rest}.`,
-        `${total} Punkte für ${playerName}. Das Match bleibt in Bewegung.`
+        playerName + ' nimmt ' + total + ' mit. Rest ' + rest + '.',
+        total + ' Punkte für ' + playerName + '. Das Match bleibt in Bewegung.'
       ],
       idle: [
-        `${playerName} ist wieder dran. Vielleicht kommt jetzt der Besuch im Triple.`,
-        `Kurze Ruhe, gleich geht es weiter mit ${playerName}.`
+        playerName + ' ist wieder dran. Vielleicht kommt jetzt der Besuch im Triple.',
+        'Kurze Ruhe, gleich geht es weiter mit ' + playerName + '.'
       ]
     },
-
     pub: {
       finish: [
-        `${playerName} macht den Sack zu. Feierabend am Board.`,
-        `${playerName} checkt das Leg. Kurz, trocken, erledigt.`
+        playerName + ' macht den Sack zu. Feierabend am Board.',
+        playerName + ' checkt das Leg. Kurz, trocken, erledigt.'
       ],
       bust: [
-        `${playerName} geht drüber. Klassischer Bust.`,
-        `Bust von ${playerName}. Da wollte der Dart etwas zu viel.`
+        playerName + ' geht drüber. Klassischer Bust.',
+        'Bust von ' + playerName + '. Da wollte der Dart etwas zu viel.'
       ],
       perfect: [
-        `${playerName} mit 180. Da klatscht sogar das Bierglas.`,
-        `180 von ${playerName}. Brett heiß, Hand locker.`
+        playerName + ' mit 180. Da klatscht sogar das Bierglas.',
+        '180 von ' + playerName + '. Brett heiß, Hand locker.'
       ],
       highscore: [
-        `${playerName} haut ${total} rein. Das kann man so machen.`,
-        `${total} Punkte von ${playerName}. Da nickt selbst der Gegner.`
+        playerName + ' haut ' + total + ' rein. Das kann man so machen.',
+        total + ' Punkte von ' + playerName + '. Da nickt selbst der Gegner.'
       ],
       checkout: [
-        `${playerName} steht auf ${rest}. Weg zumachen über ${checkout}.`,
-        `${rest} Rest für ${playerName}. Jetzt wird es interessant: ${checkout}.`
+        playerName + ' steht auf ' + rest + '. Weg zumachen über ' + checkout + '.',
+        rest + ' Rest für ' + playerName + '. Jetzt wird es interessant: ' + checkout + '.'
       ],
       strong: [
-        `${playerName} nimmt ${total} mit. Passt schon ordentlich.`,
-        `${total} Punkte von ${playerName}. Stabiler Besuch am Board.`
+        playerName + ' nimmt ' + total + ' mit. Passt schon ordentlich.',
+        total + ' Punkte von ' + playerName + '. Stabiler Besuch am Board.'
       ],
       miss: [
-        `${playerName} lässt diese Aufnahme lieber unverzinst liegen.`,
-        `Diesmal wenig Zählbares von ${playerName}.`
+        playerName + ' lässt diese Aufnahme lieber unverzinst liegen.',
+        'Diesmal wenig Zählbares von ' + playerName + '.'
       ],
       normal: [
-        `${playerName} wirft ${total}. Rest ${rest}.`,
-        `${total} Punkte für ${playerName}. Läuft weiter.`
+        playerName + ' wirft ' + total + '. Rest ' + rest + '.',
+        total + ' Punkte für ' + playerName + '. Läuft weiter.'
       ],
       idle: [
-        `${playerName} ist wieder dran. Ärmel hoch und sauber durchziehen.`,
-        `Kurze Denkpause, dann darf ${playerName} wieder arbeiten.`
+        playerName + ' ist wieder dran. Ärmel hoch und sauber durchziehen.',
+        'Kurze Denkpause, dann darf ' + playerName + ' wieder arbeiten.'
       ]
     },
-
     coach: {
       finish: [
-        `${playerName} checkt das Leg. Sehr konzentriert gelöst.`,
-        `${playerName} macht das Leg zu. Ruhig und kontrolliert.`
+        playerName + ' checkt das Leg. Sehr konzentriert gelöst.',
+        playerName + ' macht das Leg zu. Ruhig und kontrolliert.'
       ],
       bust: [
-        `${playerName} überwirft sich. Neu sammeln, weiter geht's.`,
-        `Bust von ${playerName}. Fokus halten für die nächste Aufnahme.`
+        playerName + ' überwirft sich. Neu sammeln, weiter geht es.',
+        'Bust von ' + playerName + '. Fokus halten für die nächste Aufnahme.'
       ],
       perfect: [
-        `${playerName} mit 180. Exzellente Kontrolle.`,
-        `180 von ${playerName}. Sehr stark umgesetzt.`
+        playerName + ' mit 180. Exzellente Kontrolle.',
+        '180 von ' + playerName + '. Sehr stark umgesetzt.'
       ],
       highscore: [
-        `${total} Punkte von ${playerName}. Das war eine starke Aufnahme.`,
-        `${playerName} setzt ${total}. Sehr guter Rhythmus.`
+        total + ' Punkte von ' + playerName + '. Das war eine starke Aufnahme.',
+        playerName + ' setzt ' + total + '. Sehr guter Rhythmus.'
       ],
       checkout: [
-        `${playerName} steht auf ${rest}. Der Checkout lautet ${checkout}.`,
-        `${rest} Rest für ${playerName}. Gute Chance über ${checkout}.`
+        playerName + ' steht auf ' + rest + '. Der Checkout lautet ' + checkout + '.',
+        rest + ' Rest für ' + playerName + '. Gute Chance über ' + checkout + '.'
       ],
       strong: [
-        `${playerName} nimmt ${total} Punkte mit. Das hilft.`,
-        `${total} Punkte von ${playerName}. Sauber gearbeitet.`
+        playerName + ' nimmt ' + total + ' Punkte mit. Das hilft.',
+        total + ' Punkte von ' + playerName + '. Sauber gearbeitet.'
       ],
       miss: [
-        `${playerName} bleibt diesmal ohne zählbaren Ertrag.`,
-        `Keine Wirkung in dieser Aufnahme. Nächste Chance für ${playerName}.`
+        playerName + ' bleibt diesmal ohne zählbaren Ertrag.',
+        'Keine Wirkung in dieser Aufnahme. Nächste Chance für ' + playerName + '.'
       ],
       normal: [
-        `${playerName} erzielt ${total}. Rest ${rest}.`,
-        `${total} Punkte für ${playerName}. Konzentration bleibt wichtig.`
+        playerName + ' erzielt ' + total + '. Rest ' + rest + '.',
+        total + ' Punkte für ' + playerName + '. Konzentration bleibt wichtig.'
       ],
       idle: [
-        `${playerName} bereitet die nächste Aufnahme vor. Ruhig bleiben.`,
-        `${playerName} ist wieder dran. Fokus auf den ersten Dart.`
+        playerName + ' bereitet die nächste Aufnahme vor. Ruhig bleiben.',
+        playerName + ' ist wieder dran. Fokus auf den ersten Dart.'
       ]
     }
   };
 
-  const personaSet = variants[personaId] || variants.showman;
-  const pool = personaSet[eventType] || personaSet.normal;
+  var personaSet = variants[personaId] || variants.showman;
+  var pool = personaSet[eventType] || personaSet.normal;
   return randomFrom(pool);
 }
 
 function sanitizeAiText(text, fallback) {
-  const cleaned = String(text || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
+  var cleaned = String(text || '').replace(/\s+/g, ' ').trim();
   if (!cleaned) return fallback;
-  if (cleaned.length > 180) return fallback;
+  if (cleaned.length > 200) return fallback;
+  // Entferne typische LLM-Artefakte
+  cleaned = cleaned.replace(/^(Sure|Of course|Certainly|Here is|Here's)[^:]*:/i, '').trim();
+  cleaned = cleaned.replace(/^["']|["']$/g, '').trim();
+  if (!cleaned) return fallback;
   return cleaned;
 }
 
-function buildAiPrompt({ persona, context, eventType }) {
-  return `
-Du bist ein deutscher Dart-Moderator.
-Dein Stil ist: ${persona.promptStyle}.
-Humor-Level: ${persona.humorLevel}
-Energie-Level: ${persona.energyLevel}
-Frechheit-Level: ${persona.sassLevel}
-Satzlänge: ${persona.verbosity}
+function buildAiPrompt(persona, context, eventType) {
+  var toneMap = {
+    finish: 'FEIERE diesen Moment maximal. Leg gewonnen!',
+    bust: 'Bust passiert. Reagiere kurz und trocken.',
+    perfect: '180er! Maximale Begeisterung.',
+    highscore: 'Starke Aufnahme. Anerkennend kommentieren.',
+    checkout: 'Checkout-Chance. Weise kurz auf den Weg hin.',
+    strong: 'Solide Aufnahme. Sehr kurzer Kommentar.',
+    miss: 'Kein Treffer. Nüchterne kurze Reaktion.',
+    normal: 'Normale Aufnahme. Ein Satz reicht.',
+    idle: 'Kurze Pause im Spiel. Leichter Kommentar.'
+  };
 
-Regeln:
-- Antworte auf Deutsch.
-- Nur genau ein Satz.
-- Maximal 16 Wörter.
-- Kein Markdown.
-- Keine Emojis.
-- Keine Aufzählungen.
-- Kein Rollenspiel-Hinweis.
-- Keine Erklärung deiner Entscheidung.
+  var tone = toneMap[eventType] || toneMap.normal;
 
-Kontext:
-Spieler: ${context.playerName}
-Wurf gesamt: ${context.total}
-Rest: ${context.rest}
-Ereignis: ${eventType}
-Rundennummer: ${context.turnNumber}
-Bust: ${context.bust ? 'ja' : 'nein'}
-Leg gewonnen: ${context.wonLeg ? 'ja' : 'nein'}
-Checkout-Vorschlag: ${context.checkout || 'keiner'}
+  var lines = [
+    'AUFGABE: Genau einen deutschen Dart-Moderationssatz sprechen.',
+    '',
+    'DEIN STIL: ' + persona.promptStyle,
+    'TONFALL: ' + tone,
+    '',
+    'REGELN:',
+    '- Genau EIN Satz auf Deutsch.',
+    '- Maximal 12 Wörter.',
+    '- Kein Markdown, keine Emojis, keine Sonderzeichen.',
+    '- Starte sofort mit dem Satz. Keine Einleitung.',
+    '- Kein "Ich sage" oder "Als Moderator".',
+    '',
+    'SPIELSITUATION:',
+    'Spieler: ' + context.playerName,
+    'Punkte: ' + context.total,
+    'Rest: ' + context.rest,
+    'Ereignis: ' + eventType
+  ];
 
-Formuliere jetzt genau einen passenden Moderationssatz.
-  `.trim();
+  if (context.bust) lines.push('BUST - zu viele Punkte!');
+  if (context.wonLeg) lines.push('LEG GEWONNEN!');
+  if (context.checkout) lines.push('Checkout-Weg: ' + context.checkout);
+
+  lines.push('');
+  lines.push('SATZ:');
+
+  return lines.join('\n');
 }
 
-export async function createModerationLine({
-  engine,
-  memory,
-  context,
-  useAI = true,
-  personaId = 'showman',
-  speechState = { speaking: false, queued: 0 },
-  cooldowns = { blockNormal: false }
-}) {
-  const persona = getPersonaProfile(personaId);
-  const eventType = classifyEvent(context);
+export async function createModerationLine(options) {
+  var engine = options.engine;
+  var memory = options.memory;
+  var context = options.context;
+  var useAI = options.useAI !== false;
+  var personaId = options.personaId || 'showman';
+  var speechState = options.speechState || { speaking: false, queued: 0 };
+  var cooldowns = options.cooldowns || { blockNormal: false };
 
-  const speakNow = shouldSpeak({
-    eventType,
-    secondsSinceLastInput: context.secondsSinceLastInput,
-    fastGame: context.fastGame,
-    speechState,
-    cooldowns
+  var persona = getPersonaProfile(personaId);
+  var eventType = classifyEvent(context);
+  var priority = EVENT_PRIORITY[eventType] || 'normal';
+
+  var speakNow = shouldSpeak({
+    eventType: eventType,
+    speechState: speechState,
+    cooldowns: cooldowns
   });
 
   if (!speakNow) {
     return {
       text: '',
-      eventType,
+      eventType: eventType,
       skipped: true,
       source: 'none',
-      priority: EVENT_PRIORITY[eventType] || 'normal',
-      persona
+      priority: priority,
+      persona: persona
     };
   }
 
-  const fallback = buildPersonaRuleText({
-    persona,
-    eventType,
-    playerName: context.playerName,
-    total: context.total,
-    rest: context.rest,
-    checkout: context.checkout
-  });
+  var fallback = buildPersonaRuleText(
+    persona, eventType,
+    context.playerName, context.total,
+    context.rest, context.checkout
+  );
 
-  const priority = EVENT_PRIORITY[eventType] || 'normal';
-
-  if (!useAI || !engine || context.fastGame || speechState.speaking) {
+  function saveToMemory(text, source) {
     memory.lastSpokenAt = Date.now();
     memory.lastEventType = eventType;
     memory.recentMessages.unshift({
       type: eventType,
-      text: fallback,
+      text: text,
       at: memory.lastSpokenAt,
-      source: 'rules'
+      source: source
     });
     memory.recentMessages = memory.recentMessages.slice(0, 10);
+  }
 
+  // KI nicht verfügbar
+  if (!useAI || !engine) {
+    saveToMemory(fallback, 'rules');
     return {
       text: fallback,
-      eventType,
+      eventType: eventType,
       skipped: false,
       source: 'rules',
-      priority,
-      persona
+      priority: priority,
+      persona: persona
     };
   }
 
+  // TTS spricht gerade + kein kritisches Event → Regeltext
+  if (speechState.speaking &&
+      eventType !== 'finish' &&
+      eventType !== 'perfect' &&
+      eventType !== 'bust') {
+    saveToMemory(fallback, 'rules');
+    return {
+      text: fallback,
+      eventType: eventType,
+      skipped: false,
+      source: 'rules',
+      priority: priority,
+      persona: persona
+    };
+  }
+
+  // fastGame + kein Highlight → Regeltext
+  if (context.fastGame &&
+      eventType !== 'finish' &&
+      eventType !== 'perfect' &&
+      eventType !== 'bust' &&
+      eventType !== 'highscore' &&
+      eventType !== 'checkout') {
+    saveToMemory(fallback, 'rules');
+    return {
+      text: fallback,
+      eventType: eventType,
+      skipped: false,
+      source: 'rules',
+      priority: priority,
+      persona: persona
+    };
+  }
+
+  // KI aufrufen
   try {
-    const prompt = buildAiPrompt({
-      persona,
-      context,
-      eventType
-    });
+    var prompt = buildAiPrompt(persona, context, eventType);
 
-    const reply = await engine.chat.completions.create({
+    var temperature = Math.min(0.95, 0.5 + persona.humorLevel * 0.45);
+
+    var reply = await engine.chat.completions.create({
       messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
+        { role: 'user', content: prompt }
       ],
-      temperature: Math.min(0.95, 0.45 + persona.humorLevel * 0.4)
+      temperature: temperature,
+      max_tokens: 60
     });
 
-    const rawText = reply?.choices?.[0]?.message?.content ?? '';
-    const text = sanitizeAiText(rawText, fallback);
+    var rawText = '';
+    if (reply && reply.choices && reply.choices[0] &&
+        reply.choices[0].message && reply.choices[0].message.content) {
+      rawText = reply.choices[0].message.content;
+    }
 
-    memory.lastSpokenAt = Date.now();
-    memory.lastEventType = eventType;
-    memory.recentMessages.unshift({
-      type: eventType,
-      text,
-      at: memory.lastSpokenAt,
-      source: 'ai'
-    });
-    memory.recentMessages = memory.recentMessages.slice(0, 10);
+    var text = sanitizeAiText(rawText, fallback);
+
+    saveToMemory(text, 'ai');
 
     return {
-      text,
-      eventType,
+      text: text,
+      eventType: eventType,
       skipped: false,
       source: 'ai',
-      priority,
-      persona
+      priority: priority,
+      persona: persona
     };
+
   } catch (error) {
-    memory.lastSpokenAt = Date.now();
-    memory.lastEventType = eventType;
-    memory.recentMessages.unshift({
-      type: eventType,
-      text: fallback,
-      at: memory.lastSpokenAt,
-      source: 'rules',
-      error: String(error)
-    });
-    memory.recentMessages = memory.recentMessages.slice(0, 10);
+    var errMsg = String(error && error.message ? error.message : error);
+    console.warn('AI generation failed:', errMsg);
+
+    saveToMemory(fallback, 'rules');
 
     return {
       text: fallback,
-      eventType,
+      eventType: eventType,
       skipped: false,
       source: 'rules',
-      priority,
-      persona,
-      error: String(error)
+      priority: priority,
+      persona: persona,
+      error: errMsg
     };
   }
 }
 
-export function createIdleModeration({
-  memory,
-  currentPlayerName,
-  secondsSinceLastInput,
-  speechState,
-  personaId = 'showman'
-}) {
+export function createIdleModeration(options) {
+  var memory = options.memory;
+  var currentPlayerName = options.currentPlayerName;
+  var secondsSinceLastInput = options.secondsSinceLastInput;
+  var speechState = options.speechState || { speaking: false, queued: 0 };
+  var personaId = options.personaId || 'showman';
+
   if (secondsSinceLastInput < 18) return '';
   if (memory.idleTriggered) return '';
   if (speechState.speaking || speechState.queued > 0) return '';
 
-  const persona = getPersonaProfile(personaId);
+  var persona = getPersonaProfile(personaId);
 
   memory.idleTriggered = true;
   memory.lastSpokenAt = Date.now();
   memory.lastEventType = 'idle';
 
-  const text = buildPersonaRuleText({
-    persona,
-    eventType: 'idle',
-    playerName: currentPlayerName,
-    total: 0,
-    rest: 0,
-    checkout: ''
-  });
+  var text = buildPersonaRuleText(
+    persona, 'idle',
+    currentPlayerName, 0, 0, ''
+  );
 
   memory.recentMessages.unshift({
     type: 'idle',
-    text,
+    text: text,
     at: memory.lastSpokenAt,
     source: 'rules'
   });
