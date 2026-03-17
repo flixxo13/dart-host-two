@@ -27,13 +27,11 @@ const COLORS = {
   warning: '#F59E0B'
 };
 
-/*const SELECTED_MODEL = 'Gemma-2b-it-q4f16_1-MLC';*/
-
-/*const SELECTED_MODEL = 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC';*/
-
-/*const SELECTED_MODEL = 'TinyLlama-1.1B-Chat-v1.0-q4f32_1-MLC';*/
-
-
+const MODEL_CHAIN = [
+  'TinyLlama-1.1B-Chat-v1.0-q4f32_1-MLC',
+  'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',
+  'Llama-3.2-1B-Instruct-q4f32_1-MLC'
+];
 
 export default function App() {
 
@@ -44,6 +42,7 @@ export default function App() {
   const [aiEnabled, setAiEnabled] = useState(true);
   const [aiStatus, setAiStatus] = useState('loading');
   const [webGpuAvailable, setWebGpuAvailable] = useState(false);
+  const [loadedModel, setLoadedModel] = useState('');
 
   /* ─────────────── SETUP STATE ─────────────── */
   const [phase, setPhase] = useState('setup');
@@ -99,8 +98,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-   
-   /* ─────────────── KI INITIALISIERUNG ─────────────── */
+  /* ─────────────── KI INITIALISIERUNG ─────────────── */
   useEffect(() => {
     async function initAI() {
       const gpuAvailable = !!navigator.gpu;
@@ -118,18 +116,11 @@ export default function App() {
         setLoadingAI(false);
         setAiEnabled(false);
         setAiStatus('error');
-        const msg = 'SharedArrayBuffer fehlt. COOP/COEP Header prüfen.';
+        const msg = 'SharedArrayBuffer fehlt. COOP/COEP Header in vercel.json prüfen.';
         setComment('KI Fehler: ' + msg);
         setDebugInfo((prev) => ({ ...prev, error: msg }));
         return;
       }
-
-      // Modell-Fallback Kette: von klein nach kleiner
-      const MODEL_CHAIN = [
-        'TinyLlama-1.1B-Chat-v1.0-q4f32_1-MLC',
-        'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',
-        'Llama-3.2-1B-Instruct-q4f32_1-MLC',
-      ];
 
       let lastError = null;
 
@@ -137,12 +128,14 @@ export default function App() {
         const modelId = MODEL_CHAIN[i];
 
         try {
-          setLoadProgress('Lade Modell: ' + modelId + '...');
+          setLoadProgress('Prüfe GPU Adapter...');
 
           const adapter = await navigator.gpu.requestAdapter();
           if (!adapter) {
             throw new Error('WebGPU Adapter nicht gefunden.');
           }
+
+          setLoadProgress('Lade ' + modelId + '...');
 
           const worker = new Worker(
             new URL('./ai-worker.js', import.meta.url),
@@ -155,7 +148,8 @@ export default function App() {
             {
               initProgressCallback: (p) =>
                 setLoadProgress(
-                  modelId + ': ' + Math.round(p.progress * 100) + '%'
+                  modelId.split('-')[0] + ': ' +
+                  Math.round(p.progress * 100) + '%'
                 )
             }
           );
@@ -163,32 +157,31 @@ export default function App() {
           setEngine(engineInstance);
           setLoadingAI(false);
           setAiStatus('active');
-          setComment('KI bereit: ' + modelId);
+          setLoadedModel(modelId);
+          setComment('KI bereit. Modell: ' + modelId.split('-')[0]);
           setDebugInfo((prev) => ({
             ...prev,
             error: null,
-            eventType: 'KI geladen: ' + modelId
+            eventType: 'KI geladen'
           }));
           return;
 
         } catch (error) {
-          const msg = error?.message || String(error);
+          const msg = error && error.message ? error.message : String(error);
           console.warn('Modell ' + modelId + ' fehlgeschlagen:', msg);
           lastError = msg;
 
           setLoadProgress(
-            'Modell ' + modelId + ' fehlgeschlagen. Versuche nächstes...'
+            modelId.split('-')[0] + ' fehlgeschlagen. Nächstes Modell...'
           );
 
-          // Kurz warten bevor nächstes Modell
-          await new Promise((resolve) => setTimeout(resolve, 800));
+          await new Promise((resolve) => setTimeout(resolve, 600));
         }
       }
 
-      // Alle Modelle fehlgeschlagen
+      // Alle Modelle gescheitert
       const finalMsg = lastError || 'Alle Modelle fehlgeschlagen.';
       console.error('AI init komplett fehlgeschlagen:', finalMsg);
-
       setLoadingAI(false);
       setAiEnabled(false);
       setAiStatus('error');
@@ -198,8 +191,6 @@ export default function App() {
 
     initAI();
   }, []);
-        
-            
 
   /* ─────────────── IDLE MODERATION ─────────────── */
   useEffect(() => {
@@ -271,7 +262,6 @@ export default function App() {
   /* ─────────────── SPIELER HINZUFÜGEN ─────────────── */
   const addPlayer = () => {
     if (!playerName.trim() || players.length >= 4) return;
-
     setPlayers((prev) => [
       ...prev,
       {
@@ -291,7 +281,6 @@ export default function App() {
 
     const effectiveMultiplier = val === 25 ? 1 : multiplier;
     const score = val * effectiveMultiplier;
-
     const label =
       val === 0
         ? 'MISS'
@@ -329,12 +318,20 @@ export default function App() {
     const wonLeg = rest === 0;
     const highscore = detectHighscore(currentRound);
     const checkout = getCheckoutSuggestion(rest);
+
     const secondsSinceLastInput = Math.floor(
       (Date.now() - lastInputAt) / 1000
     );
 
+    // fastGame basiert auf Rundenabstand — nicht auf Dart-Input-Zeit
+    const now = Date.now();
+    const secondsSinceLastRound = Math.floor(
+      (now - (memoryRef.current.lastRoundEndedAt || now - 30000)) / 1000
+    );
+
     const fastGame =
-      secondsSinceLastInput <= 4 || moderationMode === 'minimal';
+      moderationMode === 'minimal' ||
+      (moderationMode !== 'showtime' && secondsSinceLastRound < 5);
 
     /* ── Spieler updaten ── */
     const updatedPlayers = [...players];
@@ -354,7 +351,7 @@ export default function App() {
     updatedPlayers[currentPlayerIdx] = playerCopy;
     setPlayers(updatedPlayers);
 
-    /* ── Kontext für KI ── */
+    /* ── KI Kontext ── */
     const context = {
       playerName: playerCopy.name,
       total,
@@ -365,15 +362,14 @@ export default function App() {
       checkout,
       turnNumber: playerCopy.turnsPlayed,
       secondsSinceLastInput,
+      secondsSinceLastRound,
       fastGame
     };
 
     /* ── Einfache Textzeile ── */
     const simpleLine =
-      playerCopy.name +
-      ': ' +
-      translateRound(currentRound) +
-      '. ' +
+      playerCopy.name + ': ' +
+      translateRound(currentRound) + '. ' +
       simpleCommentary(currentRound, before, playerCopy.score);
 
     /* ── Moderationsentscheidung ── */
@@ -405,11 +401,10 @@ export default function App() {
       source: moderation.source || 'none',
       eventType: moderation.eventType || '-',
       priority: moderation.priority || 'normal',
-      persona: moderation.persona?.label || personaId,
+      persona: moderation.persona ? moderation.persona.label : personaId,
       skipped: moderation.skipped || false,
       error: moderation.error || null
     };
-
     setDebugInfo(newDebugInfo);
 
     /* ── Commentary Log ── */
@@ -417,12 +412,12 @@ export default function App() {
       const entry = {
         type: moderation.eventType || '-',
         text: moderation.skipped
-          ? '(übersprungen — ' + simpleLine + ')'
+          ? '(übersprungen)'
           : moderation.text || finalComment,
         at: Date.now(),
         source: moderation.source || 'none',
         priority: moderation.priority || 'normal',
-        persona: moderation.persona?.label || personaId,
+        persona: moderation.persona ? moderation.persona.label : personaId,
         skipped: moderation.skipped || false,
         error: moderation.error || null
       };
@@ -437,10 +432,8 @@ export default function App() {
       priority: moderation.priority || 'normal',
       interrupt: moderation.priority === 'critical',
       dedupeKey:
-        (moderation.eventType || 'turn') +
-        '_' +
-        playerCopy.name +
-        '_' +
+        (moderation.eventType || 'turn') + '_' +
+        playerCopy.name + '_' +
         playerCopy.turnsPlayed,
       rate: persona.tts.rate,
       pitch: persona.tts.pitch,
@@ -448,16 +441,12 @@ export default function App() {
       voiceName: persona.tts.voiceName
     });
 
-    /* ── TV-Overlay ── */
-    setLastStats({
-      total,
-      rest: playerCopy.score,
-      name: playerCopy.name
-    });
-
+    /* ── TV Overlay ── */
+    setLastStats({ total, rest: playerCopy.score, name: playerCopy.name });
     setShowTV(true);
     setLastInputAt(Date.now());
     memoryRef.current.idleTriggered = false;
+    memoryRef.current.lastRoundEndedAt = Date.now();
 
     setTimeout(() => {
       setShowTV(false);
@@ -465,9 +454,7 @@ export default function App() {
 
       if (wonLeg) {
         clearSpeechQueue();
-
-        const finishText =
-          'Game Shot and the Leg für ' + playerCopy.name + '.';
+        const finishText = 'Game Shot and the Leg für ' + playerCopy.name + '.';
 
         enqueueSpeech({
           text: finishText,
@@ -500,53 +487,47 @@ export default function App() {
     return (
       <div style={styles.screenCenter}>
         <div style={styles.logoBoxLarge}>DH</div>
-        <h2
-          style={{
-            color: COLORS.primary,
-            letterSpacing: 4,
-            marginTop: 20,
-            fontFamily: 'sans-serif'
-          }}
-        >
+        <h2 style={{
+          color: COLORS.primary,
+          letterSpacing: 4,
+          marginTop: 20,
+          fontFamily: 'sans-serif'
+        }}>
           DART HOST
         </h2>
-        <p
-          style={{
-            fontSize: 11,
-            color: COLORS.textMuted,
-            letterSpacing: 2,
-            fontFamily: 'sans-serif'
-          }}
-        >
+        <p style={{
+          fontSize: 11,
+          color: COLORS.textMuted,
+          letterSpacing: 2,
+          fontFamily: 'sans-serif'
+        }}>
           OFFLINE AI MODERATOR
         </p>
         <div style={styles.progressBar}>
-          <div
-            style={{
-              ...styles.progressFill,
-              width: progressWidth
-            }}
-          />
+          <div style={{ ...styles.progressFill, width: progressWidth }} />
         </div>
-        <p
-          style={{
-            fontSize: 13,
-            color: COLORS.textMuted,
-            fontFamily: 'monospace'
-          }}
-        >
+        <p style={{
+          fontSize: 13,
+          color: COLORS.textMuted,
+          fontFamily: 'monospace',
+          textAlign: 'center',
+          padding: '0 20px'
+        }}>
           {loadProgress}
         </p>
-        <p
-          style={{
-            fontSize: 11,
-            color: '#334155',
-            fontFamily: 'sans-serif',
-            marginTop: 8
-          }}
-        >
-          {navigator.gpu ? '✓ WebGPU erkannt' : '⚠ WebGPU nicht verfügbar'}
+        <p style={{
+          fontSize: 11,
+          color: navigator.gpu ? COLORS.primary : COLORS.danger,
+          fontFamily: 'sans-serif',
+          marginTop: 8
+        }}>
+          {navigator.gpu ? '✓ WebGPU erkannt' : '✗ WebGPU nicht verfügbar'}
         </p>
+        {typeof SharedArrayBuffer !== 'undefined' && (
+          <p style={{ fontSize: 11, color: COLORS.primary, fontFamily: 'sans-serif' }}>
+            ✓ SharedArrayBuffer OK
+          </p>
+        )}
       </div>
     );
   }
@@ -562,6 +543,38 @@ export default function App() {
 
         <div style={styles.setupCard}>
 
+          {/* AI Status Badge */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 14px',
+            backgroundColor: COLORS.bg,
+            borderRadius: 12,
+            border: '1px solid #1e3a52'
+          }}>
+            <span style={{
+              width: 9,
+              height: 9,
+              borderRadius: '50%',
+              backgroundColor:
+                aiStatus === 'active' ? COLORS.primary :
+                aiStatus === 'loading' ? COLORS.warning :
+                aiStatus === 'fallback' ? COLORS.accent :
+                COLORS.danger,
+              display: 'inline-block'
+            }} />
+            <span style={{ fontSize: 11, color: COLORS.textMuted, fontFamily: 'monospace' }}>
+              {aiStatus === 'active'
+                ? 'KI aktiv — ' + (loadedModel ? loadedModel.split('-')[0] : 'WebGPU')
+                : aiStatus === 'loading'
+                  ? 'KI lädt...'
+                  : aiStatus === 'fallback'
+                    ? 'Regelbasiert — WebGPU nicht verfügbar'
+                    : 'KI Fehler — Regelbasiert aktiv'}
+            </span>
+          </div>
+
           {/* Spielmodus */}
           <label style={styles.label}>SPIELMODUS</label>
           <div style={styles.row}>
@@ -571,8 +584,7 @@ export default function App() {
                 onClick={() => setGameMode(m)}
                 style={{
                   ...styles.modeBtn,
-                  backgroundColor:
-                    gameMode === m ? COLORS.primary : COLORS.bg,
+                  backgroundColor: gameMode === m ? COLORS.primary : COLORS.bg,
                   color: gameMode === m ? '#000' : '#fff'
                 }}
               >
@@ -589,19 +601,17 @@ export default function App() {
               ['minimal', 'MINIMAL'],
               ['showtime', 'SHOWTIME']
             ].map(function(pair) {
-              var value = pair[0];
-              var label = pair[1];
               return (
                 <button
-                  key={value}
-                  onClick={() => setModerationMode(value)}
+                  key={pair[0]}
+                  onClick={() => setModerationMode(pair[0])}
                   style={{
                     ...styles.modeBtn,
                     backgroundColor:
-                      moderationMode === value ? COLORS.accent : COLORS.bg
+                      moderationMode === pair[0] ? COLORS.accent : COLORS.bg
                   }}
                 >
-                  {label}
+                  {pair[1]}
                 </button>
               );
             })}
@@ -617,11 +627,9 @@ export default function App() {
                 style={{
                   ...styles.modeBtn,
                   flex: 'none',
-                  minWidth: 110,
+                  minWidth: 100,
                   backgroundColor:
-                    personaId === option.value
-                      ? COLORS.warning
-                      : COLORS.bg,
+                    personaId === option.value ? COLORS.warning : COLORS.bg,
                   color: personaId === option.value ? '#000' : '#fff'
                 }}
               >
@@ -631,9 +639,7 @@ export default function App() {
           </div>
 
           {/* Spieler */}
-          <label style={styles.label}>
-            SPIELER ({players.length}/4)
-          </label>
+          <label style={styles.label}>SPIELER ({players.length}/4)</label>
           <div style={{ display: 'flex', gap: 10 }}>
             <input
               style={{ ...styles.input, flex: 1 }}
@@ -642,15 +648,13 @@ export default function App() {
               onChange={(e) => setPlayerName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addPlayer()}
             />
-            <button onClick={addPlayer} style={styles.addPlayerBtn}>
-              +
-            </button>
+            <button onClick={addPlayer} style={styles.addPlayerBtn}>+</button>
           </div>
 
           <div style={styles.playerList}>
             {players.map((p, i) => (
               <div key={i} style={styles.playerTag}>
-                <span>
+                <span style={{ fontFamily: 'sans-serif' }}>
                   0{i + 1} {p.name}
                 </span>
                 <button
@@ -666,41 +670,19 @@ export default function App() {
           </div>
 
           {/* KI Toggle */}
-          <label
-            style={{
-              ...styles.label,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              cursor: 'pointer'
-            }}
-          >
+          <label style={{
+            ...styles.label,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            cursor: 'pointer'
+          }}>
             <input
               type="checkbox"
               checked={aiEnabled}
               onChange={() => setAiEnabled((v) => !v)}
             />
             KI-Kommentare aktivieren
-            <span
-              style={{
-                marginLeft: 4,
-                fontSize: 10,
-                color:
-                  aiStatus === 'active'
-                    ? COLORS.primary
-                    : aiStatus === 'loading'
-                      ? COLORS.warning
-                      : COLORS.textMuted
-              }}
-            >
-              {aiStatus === 'active'
-                ? '● WebGPU aktiv'
-                : aiStatus === 'loading'
-                  ? '● Lädt...'
-                  : aiStatus === 'error'
-                    ? '● Fehler'
-                    : '● Regelbasiert'}
-            </span>
           </label>
 
           {/* Start */}
@@ -712,9 +694,7 @@ export default function App() {
             }}
             disabled={players.length === 0}
           >
-            {players.length > 0
-              ? 'SPIEL STARTEN ▶'
-              : 'SPIELER HINZUFÜGEN'}
+            {players.length > 0 ? 'SPIEL STARTEN ▶' : 'SPIELER HINZUFÜGEN'}
           </button>
         </div>
       </div>
@@ -728,33 +708,27 @@ export default function App() {
       {/* TV Overlay */}
       {showTV && (
         <div style={styles.tvOverlay}>
-          <div
-            style={{
-              color: COLORS.primary,
-              fontSize: 22,
-              fontWeight: 700,
-              fontFamily: 'sans-serif'
-            }}
-          >
+          <div style={{
+            color: COLORS.primary,
+            fontSize: 22,
+            fontWeight: 700,
+            fontFamily: 'sans-serif'
+          }}>
             {lastStats.name}
           </div>
-          <div
-            style={{
-              fontSize: 120,
-              fontWeight: 900,
-              fontFamily: 'sans-serif',
-              lineHeight: 1
-            }}
-          >
+          <div style={{
+            fontSize: 120,
+            fontWeight: 900,
+            fontFamily: 'sans-serif',
+            lineHeight: 1
+          }}>
             {lastStats.total}
           </div>
-          <div
-            style={{
-              fontSize: 28,
-              color: COLORS.textMuted,
-              fontFamily: 'sans-serif'
-            }}
-          >
+          <div style={{
+            fontSize: 28,
+            color: COLORS.textMuted,
+            fontFamily: 'sans-serif'
+          }}>
             REST: {lastStats.rest}
           </div>
         </div>
@@ -764,45 +738,43 @@ export default function App() {
       <header style={styles.header}>
         <div style={styles.logoBoxSmall}>DH</div>
         <div>
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 900,
-              fontFamily: 'sans-serif'
-            }}
-          >
+          <div style={{
+            fontSize: 18,
+            fontWeight: 900,
+            fontFamily: 'sans-serif'
+          }}>
             DART HOST
           </div>
-          <div
-            style={{
-              fontSize: 10,
-              color: COLORS.primary,
-              letterSpacing: 1,
-              fontFamily: 'sans-serif'
-            }}
-          >
-            LIVE MATCH
+          <div style={{
+            fontSize: 10,
+            color: COLORS.primary,
+            letterSpacing: 1,
+            fontFamily: 'sans-serif'
+          }}>
+            {aiStatus === 'active'
+              ? '● KI AKTIV'
+              : aiStatus === 'fallback'
+                ? '● REGELBASIERT'
+                : '● KI FEHLER'}
           </div>
         </div>
-        <div
-          style={{
-            marginLeft: 'auto',
-            display: 'flex',
-            gap: 12,
-            alignItems: 'center'
-          }}
-        >
+        <div style={{
+          marginLeft: 'auto',
+          display: 'flex',
+          gap: 10,
+          alignItems: 'center'
+        }}>
           {/* Debug Button */}
           <button
             style={{
               ...styles.iconBtn,
               color: showDebug ? COLORS.primary : COLORS.textMuted,
-              fontSize: 18,
               border: showDebug
                 ? '1px solid ' + COLORS.primary
                 : '1px solid transparent',
               borderRadius: 8,
-              padding: '4px 8px'
+              padding: '4px 8px',
+              fontSize: 17
             }}
             onClick={() => setShowDebug((v) => !v)}
           >
@@ -839,28 +811,25 @@ export default function App() {
       {/* Kommentar Box */}
       <div style={styles.commentBox}>
         <div style={styles.commentMetaRow}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 900,
-              color: COLORS.primary,
-              fontFamily: 'sans-serif'
-            }}
-          >
+          <div style={{
+            fontSize: 10,
+            fontWeight: 900,
+            color: COLORS.primary,
+            fontFamily: 'sans-serif'
+          }}>
             HOST KOMMENTAR
           </div>
           <div style={styles.debugPill}>
             {debugInfo.persona} · {debugInfo.eventType} · {debugInfo.source} · {debugInfo.priority}
           </div>
         </div>
-        <div
-          style={{
-            fontStyle: 'italic',
-            fontSize: 15,
-            fontFamily: 'sans-serif',
-            lineHeight: 1.5
-          }}
-        >
+        <div style={{
+          fontStyle: 'italic',
+          fontSize: 15,
+          fontFamily: 'sans-serif',
+          lineHeight: 1.5,
+          color: '#fff'
+        }}>
           "{comment}"
         </div>
       </div>
@@ -872,42 +841,34 @@ export default function App() {
             key={i}
             style={{
               ...styles.playerCard,
-              borderLeft:
-                i === currentPlayerIdx
-                  ? '4px solid ' + COLORS.primary
-                  : '4px solid transparent',
+              borderLeft: i === currentPlayerIdx
+                ? '4px solid ' + COLORS.primary
+                : '4px solid transparent',
               opacity: i === currentPlayerIdx ? 1 : 0.5
             }}
           >
-            <div
-              style={{
-                fontSize: 10,
-                color: COLORS.textMuted,
-                fontFamily: 'sans-serif'
-              }}
-            >
+            <div style={{
+              fontSize: 10,
+              color: COLORS.textMuted,
+              fontFamily: 'sans-serif'
+            }}>
               SPIELER {i + 1}
             </div>
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: 800,
-                color:
-                  i === currentPlayerIdx ? COLORS.primary : '#fff',
-                fontFamily: 'sans-serif'
-              }}
-            >
+            <div style={{
+              fontSize: 22,
+              fontWeight: 800,
+              color: i === currentPlayerIdx ? COLORS.primary : '#fff',
+              fontFamily: 'sans-serif'
+            }}>
               {p.name}
             </div>
-            <div
-              style={{
-                fontSize: 52,
-                fontWeight: 900,
-                margin: '4px 0',
-                fontFamily: 'sans-serif',
-                lineHeight: 1
-              }}
-            >
+            <div style={{
+              fontSize: 52,
+              fontWeight: 900,
+              margin: '2px 0',
+              fontFamily: 'sans-serif',
+              lineHeight: 1
+            }}>
               {p.score}
             </div>
             <div style={styles.statRow}>
@@ -929,16 +890,14 @@ export default function App() {
           ))}
         </div>
 
-        <div
-          style={{
-            fontSize: 60,
-            fontWeight: 900,
-            color: COLORS.primary,
-            fontFamily: 'sans-serif',
-            lineHeight: 1,
-            margin: '8px 0'
-          }}
-        >
+        <div style={{
+          fontSize: 64,
+          fontWeight: 900,
+          color: COLORS.primary,
+          fontFamily: 'sans-serif',
+          lineHeight: 1,
+          margin: '6px 0 12px 0'
+        }}>
           {currentTotal}
         </div>
 
@@ -961,25 +920,18 @@ export default function App() {
 
         {/* Multiplier */}
         <div style={styles.row}>
-          {[
-            [1, 'SINGLE'],
-            [2, 'DOUBLE'],
-            [3, 'TRIPLE']
-          ].map(function(pair) {
-            var val = pair[0];
-            var label = pair[1];
+          {[[1, 'SINGLE'], [2, 'DOUBLE'], [3, 'TRIPLE']].map(function(pair) {
             return (
               <button
-                key={val}
-                onClick={() => setMultiplier(val)}
+                key={pair[0]}
+                onClick={() => setMultiplier(pair[0])}
                 style={{
                   ...styles.multBtn,
-                  backgroundColor:
-                    multiplier === val ? '#fff' : COLORS.bg,
-                  color: multiplier === val ? '#000' : '#fff'
+                  backgroundColor: multiplier === pair[0] ? '#fff' : COLORS.bg,
+                  color: multiplier === pair[0] ? '#000' : '#fff'
                 }}
               >
-                {label}
+                {pair[1]}
               </button>
             );
           })}
@@ -1025,7 +977,7 @@ export default function App() {
         aiStatus={aiStatus}
         webGpuAvailable={webGpuAvailable}
         personaId={personaId}
-        personaLabel={getPersonaProfile(personaId)?.label}
+        personaLabel={getPersonaProfile(personaId) ? getPersonaProfile(personaId).label : personaId}
         moderationMode={moderationMode}
         speechState={liveSpeechState}
         debugInfo={debugInfo}
@@ -1046,7 +998,7 @@ const styles = {
     fontFamily: 'sans-serif',
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px'
+    gap: '12px'
   },
   screenCenter: {
     backgroundColor: COLORS.bg,
@@ -1093,11 +1045,11 @@ const styles = {
     fontSize: 11,
     color: COLORS.textMuted,
     letterSpacing: 3,
-    marginBottom: 28
+    marginBottom: 24
   },
   setupCard: {
     backgroundColor: COLORS.card,
-    padding: 24,
+    padding: 22,
     borderRadius: 28,
     display: 'flex',
     flexDirection: 'column',
@@ -1146,7 +1098,7 @@ const styles = {
   },
   playerCard: {
     backgroundColor: COLORS.card,
-    padding: '14px 16px',
+    padding: '12px 16px',
     borderRadius: 22
   },
   statRow: {
@@ -1154,11 +1106,12 @@ const styles = {
     justifyContent: 'space-between',
     fontSize: 11,
     color: COLORS.textMuted,
-    marginTop: 4
+    marginTop: 4,
+    fontFamily: 'monospace'
   },
   roundCard: {
     backgroundColor: COLORS.card,
-    padding: '18px 16px',
+    padding: '16px',
     borderRadius: 28,
     textAlign: 'center'
   },
@@ -1166,7 +1119,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'center',
     gap: 12,
-    marginBottom: 8
+    marginBottom: 4
   },
   dartSlot: {
     width: 58,
@@ -1178,7 +1131,8 @@ const styles = {
     justifyContent: 'center',
     fontSize: 18,
     fontWeight: 800,
-    border: '1px solid #334155'
+    border: '1px solid #334155',
+    fontFamily: 'sans-serif'
   },
   finishBtn: {
     backgroundColor: COLORS.primary,
@@ -1189,12 +1143,13 @@ const styles = {
     fontWeight: 900,
     border: 'none',
     fontSize: 16,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    fontFamily: 'sans-serif'
   },
   actionRow: {
     display: 'flex',
     gap: 10,
-    marginTop: 12
+    marginTop: 10
   },
   subBtn: {
     flex: 1,
@@ -1204,11 +1159,12 @@ const styles = {
     borderRadius: 12,
     border: 'none',
     fontWeight: 700,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    fontFamily: 'sans-serif'
   },
   keypad: {
     backgroundColor: COLORS.card,
-    padding: 16,
+    padding: 14,
     borderRadius: 24
   },
   multBtn: {
@@ -1218,33 +1174,36 @@ const styles = {
     border: 'none',
     fontWeight: 800,
     cursor: 'pointer',
-    fontSize: 13
+    fontSize: 12,
+    fontFamily: 'sans-serif'
   },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(5, 1fr)',
-    gap: 8,
-    marginTop: 14
+    gap: 7,
+    marginTop: 12
   },
   gridBtn: {
     backgroundColor: COLORS.bg,
     border: 'none',
     color: '#fff',
-    padding: '17px 0',
+    padding: '16px 0',
     borderRadius: 12,
     fontWeight: 700,
     cursor: 'pointer',
-    fontSize: 15
+    fontSize: 15,
+    fontFamily: 'sans-serif'
   },
   modeBtn: {
     flex: 1,
-    padding: 14,
+    padding: 13,
     borderRadius: 12,
     border: 'none',
     fontWeight: 800,
     color: '#fff',
     cursor: 'pointer',
-    fontSize: 13
+    fontSize: 12,
+    fontFamily: 'sans-serif'
   },
   row: {
     display: 'flex',
@@ -1252,7 +1211,7 @@ const styles = {
   },
   rowWrap: {
     display: 'flex',
-    gap: 10,
+    gap: 8,
     flexWrap: 'wrap'
   },
   input: {
@@ -1262,7 +1221,8 @@ const styles = {
     borderRadius: 14,
     color: '#fff',
     fontSize: 15,
-    outline: 'none'
+    outline: 'none',
+    fontFamily: 'sans-serif'
   },
   addPlayerBtn: {
     backgroundColor: COLORS.primary,
@@ -1294,8 +1254,9 @@ const styles = {
     borderRadius: 18,
     fontWeight: 900,
     border: 'none',
-    fontSize: 18,
-    cursor: 'pointer'
+    fontSize: 17,
+    cursor: 'pointer',
+    fontFamily: 'sans-serif'
   },
   tvOverlay: {
     position: 'fixed',
@@ -1312,7 +1273,7 @@ const styles = {
     gap: 8
   },
   progressBar: {
-    width: '100%',
+    width: '80%',
     height: 8,
     backgroundColor: COLORS.card,
     borderRadius: 4,
@@ -1329,7 +1290,8 @@ const styles = {
     fontSize: 11,
     fontWeight: 800,
     color: COLORS.textMuted,
-    letterSpacing: 1
+    letterSpacing: 1,
+    fontFamily: 'sans-serif'
   },
   delBtn: {
     background: 'none',
