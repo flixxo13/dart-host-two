@@ -14,6 +14,10 @@ import {
 } from './utils/ttsEngine';
 import { getPersonaProfile, getPersonaOptions } from './ai/personaProfiles';
 
+import DebugPanel from './debug/DebugPanel';
+import { getSpeechState } from './utils/ttsEngine';
+
+
 const COLORS = {
   bg: '#0F172A',
   card: '#1E293B',
