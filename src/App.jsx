@@ -27,7 +27,10 @@ const COLORS = {
   warning: '#F59E0B'
 };
 
-const SELECTED_MODEL = 'Gemma-2b-it-q4f16_1-MLC';
+/*const SELECTED_MODEL = 'Gemma-2b-it-q4f16_1-MLC';*/
+
+const SELECTED_MODEL = 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC';
+
 
 export default function App() {
 
