@@ -99,6 +99,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+   
    /* ─────────────── KI INITIALISIERUNG ─────────────── */
   useEffect(() => {
     async function initAI() {
@@ -113,62 +114,92 @@ export default function App() {
         return;
       }
 
-      try {
-        if (typeof SharedArrayBuffer === 'undefined') {
-          throw new Error(
-            'SharedArrayBuffer nicht verfügbar. ' +
-            'COOP/COEP Header fehlen auf dem Server. ' +
-            'Bitte vercel.json mit Cross-Origin-Opener-Policy hinzufügen.'
-          );
-        }
-
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-          throw new Error(
-            'WebGPU Adapter nicht gefunden. ' +
-            'GPU nicht unterstützt oder Browser-Flag fehlt.'
-          );
-        }
-
-        const worker = new Worker(
-          new URL('./ai-worker.js', import.meta.url),
-          { type: 'module' }
-        );
-
-        const engineInstance = await webllm.CreateWebWorkerMLCEngine(
-          worker,
-          SELECTED_MODEL,
-          {
-            initProgressCallback: (p) =>
-              setLoadProgress(
-                `Gehirn wird geladen: ${Math.round(p.progress * 100)}%`
-              )
-          }
-        );
-
-        setEngine(engineInstance);
-        setLoadingAI(false);
-        setAiStatus('active');
-
-      } catch (error) {
-        const msg = error?.message || String(error);
-        console.error('AI init failed:', msg);
-
+      if (typeof SharedArrayBuffer === 'undefined') {
         setLoadingAI(false);
         setAiEnabled(false);
         setAiStatus('error');
-        setComment('KI Fehler: ' + msg.slice(0, 80));
-
-        setDebugInfo((prev) => ({
-          ...prev,
-          error: msg
-        }));
+        const msg = 'SharedArrayBuffer fehlt. COOP/COEP Header prüfen.';
+        setComment('KI Fehler: ' + msg);
+        setDebugInfo((prev) => ({ ...prev, error: msg }));
+        return;
       }
+
+      // Modell-Fallback Kette: von klein nach kleiner
+      const MODEL_CHAIN = [
+        'TinyLlama-1.1B-Chat-v1.0-q4f32_1-MLC',
+        'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC',
+        'Llama-3.2-1B-Instruct-q4f32_1-MLC',
+      ];
+
+      let lastError = null;
+
+      for (let i = 0; i < MODEL_CHAIN.length; i++) {
+        const modelId = MODEL_CHAIN[i];
+
+        try {
+          setLoadProgress('Lade Modell: ' + modelId + '...');
+
+          const adapter = await navigator.gpu.requestAdapter();
+          if (!adapter) {
+            throw new Error('WebGPU Adapter nicht gefunden.');
+          }
+
+          const worker = new Worker(
+            new URL('./ai-worker.js', import.meta.url),
+            { type: 'module' }
+          );
+
+          const engineInstance = await webllm.CreateWebWorkerMLCEngine(
+            worker,
+            modelId,
+            {
+              initProgressCallback: (p) =>
+                setLoadProgress(
+                  modelId + ': ' + Math.round(p.progress * 100) + '%'
+                )
+            }
+          );
+
+          setEngine(engineInstance);
+          setLoadingAI(false);
+          setAiStatus('active');
+          setComment('KI bereit: ' + modelId);
+          setDebugInfo((prev) => ({
+            ...prev,
+            error: null,
+            eventType: 'KI geladen: ' + modelId
+          }));
+          return;
+
+        } catch (error) {
+          const msg = error?.message || String(error);
+          console.warn('Modell ' + modelId + ' fehlgeschlagen:', msg);
+          lastError = msg;
+
+          setLoadProgress(
+            'Modell ' + modelId + ' fehlgeschlagen. Versuche nächstes...'
+          );
+
+          // Kurz warten bevor nächstes Modell
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+      }
+
+      // Alle Modelle fehlgeschlagen
+      const finalMsg = lastError || 'Alle Modelle fehlgeschlagen.';
+      console.error('AI init komplett fehlgeschlagen:', finalMsg);
+
+      setLoadingAI(false);
+      setAiEnabled(false);
+      setAiStatus('error');
+      setComment('KI Fehler: ' + finalMsg.slice(0, 80));
+      setDebugInfo((prev) => ({ ...prev, error: finalMsg }));
     }
 
     initAI();
   }, []);
-
+        
+            
 
   /* ─────────────── IDLE MODERATION ─────────────── */
   useEffect(() => {
