@@ -6,7 +6,13 @@ import { detectHighscore } from './game/highscoreDetector';
 import { getCheckoutSuggestion } from './game/checkoutHelper';
 import { createCommentaryMemory } from './ai/commentaryMemory';
 import { createModerationLine, createIdleModeration } from './ai/moderationEngine';
-import { speakText } from './utils/ttsEngine';
+import {
+  enqueueSpeech,
+  getSpeechState,
+  warmupVoices,
+  clearSpeechQueue
+} from './utils/ttsEngine';
+import { getPersonaProfile, getPersonaOptions } from './ai/personaProfiles';
 
 const COLORS = {
   bg: '#0F172A',
@@ -15,7 +21,8 @@ const COLORS = {
   text: '#FFFFFF',
   textMuted: '#94A3B8',
   danger: '#EF4444',
-  accent: '#3B82F6'
+  accent: '#3B82F6',
+  warning: '#F59E0B'
 };
 
 const SELECTED_MODEL = 'Gemma-2b-it-q4f16_1-MLC';
@@ -36,18 +43,41 @@ export default function App() {
   const [lastStats, setLastStats] = useState({ total: 0, rest: 0, name: '' });
   const [aiEnabled, setAiEnabled] = useState(true);
   const [moderationMode, setModerationMode] = useState('auto');
+  const [personaId, setPersonaId] = useState('showman');
   const [lastInputAt, setLastInputAt] = useState(Date.now());
+  const [debugInfo, setDebugInfo] = useState({
+    source: '-',
+    eventType: '-',
+    priority: '-',
+    persona: '-'
+  });
+
   const memoryRef = useRef(createCommentaryMemory());
+
+  useEffect(() => {
+    warmupVoices();
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = () => warmupVoices();
+    }
+  }, []);
 
   useEffect(() => {
     async function initAI() {
       try {
         if (!navigator.gpu) throw new Error('WebGPU fehlt');
-        const worker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
-        const engineInstance = await webllm.CreateWebWorkerMLCEngine(worker, SELECTED_MODEL, {
-          initProgressCallback: (p) =>
-            setLoadProgress(`Gehirn wird geladen: ${Math.round(p.progress * 100)}%`)
+        const worker = new Worker(new URL('./ai-worker.js', import.meta.url), {
+          type: 'module'
         });
+
+        const engineInstance = await webllm.CreateWebWorkerMLCEngine(
+          worker,
+          SELECTED_MODEL,
+          {
+            initProgressCallback: (p) =>
+              setLoadProgress(`Gehirn wird geladen: ${Math.round(p.progress * 100)}%`)
+          }
+        );
+
         setEngine(engineInstance);
         setLoadingAI(false);
       } catch (error) {
@@ -57,6 +87,7 @@ export default function App() {
         setComment('Offline-Regeln aktiv. KI konnte nicht geladen werden.');
       }
     }
+
     initAI();
   }, []);
 
@@ -65,20 +96,41 @@ export default function App() {
 
     const interval = setInterval(() => {
       const secondsSinceLastInput = Math.floor((Date.now() - lastInputAt) / 1000);
+      const speechState = getSpeechState();
+
       const line = createIdleModeration({
         memory: memoryRef.current,
         currentPlayerName: players[currentPlayerIdx]?.name || 'Der Spieler',
-        secondsSinceLastInput
+        secondsSinceLastInput,
+        speechState,
+        personaId
       });
 
       if (line) {
+        const persona = getPersonaProfile(personaId);
         setComment(line);
-        speakText(line, { rate: 0.98 });
+        setDebugInfo({
+          source: 'rules',
+          eventType: 'idle',
+          priority: 'low',
+          persona: persona.label
+        });
+
+        enqueueSpeech({
+          text: line,
+          priority: 'low',
+          interrupt: false,
+          dedupeKey: `idle_${players[currentPlayerIdx]?.name || 'player'}`,
+          rate: persona.tts.rate,
+          pitch: persona.tts.pitch,
+          volume: persona.tts.volume,
+          voiceName: persona.tts.voiceName
+        });
       }
-    }, 4000);
+    }, 3000);
 
     return () => clearInterval(interval);
-  }, [phase, players, currentPlayerIdx, lastInputAt]);
+  }, [phase, players, currentPlayerIdx, lastInputAt, personaId]);
 
   const currentPlayer = players[currentPlayerIdx];
 
@@ -122,6 +174,7 @@ export default function App() {
     setCurrentRound((prev) => [...prev, { value: score, label }]);
     setMultiplier(1);
     setLastInputAt(Date.now());
+    memoryRef.current.idleTriggered = false;
 
     if (navigator.vibrate) navigator.vibrate(15);
   };
@@ -129,6 +182,7 @@ export default function App() {
   const undoLastDart = () => {
     setCurrentRound((prev) => prev.slice(0, -1));
     setLastInputAt(Date.now());
+    memoryRef.current.idleTriggered = false;
   };
 
   const finishRound = async () => {
@@ -181,11 +235,20 @@ export default function App() {
       playerCopy.score
     )}`;
 
+    const speechState = getSpeechState();
+    const cooldowns = {
+      blockNormal:
+        Date.now() - (memoryRef.current.lastSpokenAt || 0) < 2500
+    };
+
     const moderation = await createModerationLine({
       engine,
       memory: memoryRef.current,
       context,
-      useAI: aiEnabled
+      useAI: aiEnabled,
+      personaId,
+      speechState,
+      cooldowns
     });
 
     const finalComment = moderation.skipped
@@ -193,9 +256,26 @@ export default function App() {
       : `${simpleLine} ${moderation.text}`.trim();
 
     setComment(finalComment);
+    setDebugInfo({
+      source: moderation.source,
+      eventType: moderation.eventType,
+      priority: moderation.priority,
+      persona: moderation.persona?.label || personaId
+    });
 
-    const speechRate = wonLeg ? 0.96 : fastGame ? 1.08 : 1.0;
-    speakText(finalComment, { rate: speechRate });
+    const persona = getPersonaProfile(personaId);
+
+    enqueueSpeech({
+      text: finalComment,
+      priority: moderation.priority || 'normal',
+      interrupt:
+        moderation.priority === 'critical',
+      dedupeKey: `${moderation.eventType}_${playerCopy.name}_${playerCopy.turnsPlayed}`,
+      rate: persona.tts.rate,
+      pitch: persona.tts.pitch,
+      volume: persona.tts.volume,
+      voiceName: persona.tts.voiceName
+    });
 
     setLastStats({
       total,
@@ -205,14 +285,26 @@ export default function App() {
 
     setShowTV(true);
     setLastInputAt(Date.now());
+    memoryRef.current.idleTriggered = false;
 
     setTimeout(() => {
       setShowTV(false);
       setCurrentRound([]);
 
       if (wonLeg) {
+        clearSpeechQueue();
+        enqueueSpeech({
+          text: `Game Shot and the Leg für ${playerCopy.name}.`,
+          priority: 'critical',
+          interrupt: true,
+          dedupeKey: `gameshot_${playerCopy.name}`,
+          rate: persona.tts.rate,
+          pitch: persona.tts.pitch,
+          volume: persona.tts.volume,
+          voiceName: persona.tts.voiceName
+        });
+
         setComment(`Game Shot and the Leg für ${playerCopy.name}.`);
-        speakText(`Game Shot and the Leg für ${playerCopy.name}.`, { rate: 0.94 });
         setPhase('setup');
         setPlayers([]);
         setCurrentPlayerIdx(0);
@@ -288,6 +380,24 @@ export default function App() {
                 }}
               >
                 {label}
+              </button>
+            ))}
+          </div>
+
+          <label style={styles.label}>PERSONA</label>
+          <div style={styles.rowWrap}>
+            {getPersonaOptions().map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setPersonaId(option.value)}
+                style={{
+                  ...styles.modeBtn,
+                  minWidth: 120,
+                  backgroundColor:
+                    personaId === option.value ? COLORS.warning : COLORS.bg
+                }}
+              >
+                {option.label}
               </button>
             ))}
           </div>
@@ -378,12 +488,19 @@ export default function App() {
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 15 }}>
-          <button style={styles.iconBtn} onClick={() => setCurrentRound([])}>
+          <button
+            style={styles.iconBtn}
+            onClick={() => {
+              setCurrentRound([]);
+              memoryRef.current.idleTriggered = false;
+            }}
+          >
             ↺
           </button>
           <button
             style={styles.iconBtn}
             onClick={() => {
+              clearSpeechQueue({ cancelCurrent: true });
               setPhase('setup');
               setPlayers([]);
               setCurrentRound([]);
@@ -395,15 +512,19 @@ export default function App() {
       </header>
 
       <div style={styles.commentBox}>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 900,
-            color: COLORS.primary,
-            marginBottom: 4
-          }}
-        >
-          HOST KOMMENTAR
+        <div style={styles.commentMetaRow}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 900,
+              color: COLORS.primary
+            }}
+          >
+            HOST KOMMENTAR
+          </div>
+          <div style={styles.debugPill}>
+            {debugInfo.persona} · {debugInfo.eventType} · {debugInfo.source} · {debugInfo.priority}
+          </div>
         </div>
         <div style={{ fontStyle: 'italic', fontSize: 15 }}>“{comment}”</div>
       </div>
@@ -587,6 +708,21 @@ const styles = {
     borderRadius: 20,
     borderLeft: `4px solid ${COLORS.primary}`
   },
+  commentMetaRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 10,
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  debugPill: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    backgroundColor: '#0b1220',
+    border: '1px solid #334155',
+    borderRadius: 999,
+    padding: '4px 8px'
+  },
   scoreboard: {
     display: 'flex',
     flexDirection: 'column',
@@ -683,6 +819,15 @@ const styles = {
     fontWeight: 800,
     color: '#fff'
   },
+  row: {
+    display: 'flex',
+    gap: 10
+  },
+  rowWrap: {
+    display: 'flex',
+    gap: 10,
+    flexWrap: 'wrap'
+  },
   input: {
     backgroundColor: COLORS.bg,
     border: '1px solid #334155',
@@ -749,10 +894,6 @@ const styles = {
     fontSize: 11,
     fontWeight: 800,
     color: COLORS.textMuted
-  },
-  row: {
-    display: 'flex',
-    gap: 10
   },
   delBtn: {
     background: 'none',
